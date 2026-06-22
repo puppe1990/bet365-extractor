@@ -40,6 +40,12 @@ describe("build output", () => {
     execSync(`node --check "${path}"`, { stdio: "pipe" });
   });
 
+  it("extension/main-world-scroll.js tem sintaxe válida", () => {
+    const path = join(root, "extension/main-world-scroll.js");
+    assert.ok(existsSync(path), "rode npm run build:extension");
+    execSync(`node --check "${path}"`, { stdio: "pipe" });
+  });
+
   it("extension/dist/network-page-sniffer.js tem sintaxe válida", () => {
     const path = join(root, "extension/dist/network-page-sniffer.js");
     assert.ok(existsSync(path), "rode npm run build:extension");

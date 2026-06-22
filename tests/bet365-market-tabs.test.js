@@ -4,14 +4,20 @@ import assert from "node:assert/strict";
 import {
   MARKET_CATEGORY_TABS,
   MARKET_CATEGORY_TABS_VISIT,
+  PREMATCH_MARKET_TABS_VISIT,
+  collectMarketTabCandidates,
   gluedMarketTabCount,
   isGluedMarketTabContainer,
+  isInLeftMarketColumn,
   isInMarketTabBand,
   isMarketCategoryTabLabel,
+  isPlayerMarketTabKey,
   leafMarketTabKey,
   marketCategoryTabKey,
+  marketTabsVisitList,
   normalizeMarketTabLabel,
   pickSmallestTabCandidates,
+  resolveMarketTabPageMode,
   scoreMarketTabBarContainer,
 } from "../lib/bet365-market-tabs.js";
 
@@ -39,9 +45,30 @@ describe("bet365 market category tabs", () => {
 
   it("normaliza espaços no rótulo", () => {
     assert.equal(normalizeMarketTabLabel("  Jogador \n"), "Jogador");
-    assert.equal(MARKET_CATEGORY_TABS.length, 9);
+    assert.equal(MARKET_CATEGORY_TABS.length, 13);
     assert.ok(MARKET_CATEGORY_TABS_VISIT.includes("Jogador"));
     assert.ok(MARKET_CATEGORY_TABS_VISIT.length < MARKET_CATEGORY_TABS.length);
+  });
+
+  it("reconhece abas de mercado no cupom pré-jogo", () => {
+    for (const tab of ["Jogador a Marcar", "Handicap", "Odds Asiáticas", "Resultado"]) {
+      assert.ok(isMarketCategoryTabLabel(tab), tab);
+      assert.equal(marketCategoryTabKey(tab), tab);
+    }
+    assert.ok(PREMATCH_MARKET_TABS_VISIT.includes("Jogador a Marcar"));
+    assert.equal(
+      marketTabsVisitList(
+        resolveMarketTabPageMode("https://www.bet365.bet.br/#/AC/B1/C1/D8/E194699812/")
+      ),
+      PREMATCH_MARKET_TABS_VISIT
+    );
+    assert.equal(
+      marketTabsVisitList(
+        resolveMarketTabPageMode("https://www.bet365.bet.br/#/IP/EV151352326532C1/")
+      ),
+      MARKET_CATEGORY_TABS_VISIT
+    );
+    assert.ok(isPlayerMarketTabKey("Jogador a Marcar"));
   });
 
   it("detecta container colado com várias abas", () => {
@@ -60,17 +87,44 @@ describe("bet365 market category tabs", () => {
 
   it("relaxa faixa vertical das abas", () => {
     assert.equal(
-      isInMarketTabBand({ top: 350, left: 120, width: 60, height: 24 }, 900, 1200),
+      isInMarketTabBand({ top: 350, left: 120, width: 60, height: 24 }, 900, 1200, "live"),
       true
     );
     assert.equal(
-      isInMarketTabBand({ top: 420, left: 120, width: 60, height: 24 }, 900, 1200),
+      isInMarketTabBand({ top: 420, left: 120, width: 60, height: 24 }, 900, 1200, "live"),
       false
     );
     assert.equal(
-      isInMarketTabBand({ top: 450, left: 120, width: 60, height: 24 }, 1200, 1400),
+      isInMarketTabBand({ top: 450, left: 120, width: 60, height: 24 }, 1200, 1400, "live"),
       true
     );
+    assert.equal(
+      isInMarketTabBand({ top: 420, left: 120, width: 60, height: 24 }, 900, 1200, "prematch"),
+      true
+    );
+    assert.equal(isInLeftMarketColumn({ top: 120, left: 120, width: 60, height: 24 }, 1200), true);
+    assert.equal(isInLeftMarketColumn({ top: 120, left: 900, width: 60, height: 24 }, 1200), false);
+  });
+
+  it("coleta abas na coluna esquerda e ignora painel lateral", () => {
+    const picked = collectMarketTabCandidates(
+      [
+        { text: "Popular", rect: { top: 410, left: 120, width: 80, height: 24 } },
+        { text: "Jogador a Marcar", rect: { top: 410, left: 220, width: 120, height: 24 } },
+        { text: "Estat.", rect: { top: 180, left: 900, width: 50, height: 22 } },
+        { text: "Cronologia", rect: { top: 180, left: 980, width: 90, height: 22 } },
+        {
+          text: "Popular Jogador a Marcar Odds Asiáticas",
+          rect: { top: 410, left: 120, width: 320, height: 24 },
+          childTexts: ["Popular", "Jogador a Marcar", "Odds Asiáticas"],
+        },
+      ],
+      900,
+      1200,
+      "prematch"
+    );
+
+    assert.deepEqual(picked.map((t) => t.label).sort(), ["Jogador a Marcar", "Popular"]);
   });
 
   it("escolhe candidato com menor área por rótulo", () => {

@@ -271,38 +271,81 @@
     return [...byKey.values()];
   }
 
-  function clickSidePanelTab(labelRe, scopeRoot = null) {
-    const scopes = scopeRoot ? [scopeRoot] : [];
-    queryDeep(
-      "[class*='LocationEventsMenu'], [class*='MatchLiveModule'], [class*='InPlayModule'], [class*='EventView'], [class*='StatsModule']"
-    ).forEach((el) => scopes.push(el));
+  function collectSidePanelTabElements(labelRe) {
+    const nodes = [];
+    const scopes = [];
+    SIDE_PANEL_TAB_SCOPE_SELECTORS.forEach((sel) =>
+      queryDeep(sel).forEach((el) => scopes.push(el))
+    );
     if (!scopes.length) scopes.push(document.documentElement);
 
-    const selectors = [
-      "[class*='LocationEventsMenu_Item']",
-      "[class*='EventsMenu'] *",
-      "[class*='StatsCategory'] *",
-      "[class*='MatchStatsMenu'] *",
-      "[class*='SubNav'] *",
-      "button",
-      "[role='tab']",
-    ];
+    const pushNode = (el) => {
+      const text = normalizeSidePanelTabLabel(el?.innerText || el?.textContent || "");
+      if (!text || !labelRe.test(text)) return;
+      const childTexts = [...(el?.children || [])].map((child) =>
+        normalizeSidePanelTabLabel(child.innerText || child.textContent || "")
+      );
+      if (!leafSidePanelTabKey(text, childTexts)) return;
+      try {
+        const rect = el.getBoundingClientRect();
+        if (!isInSidePanelTabBand(rect, window.innerWidth)) return;
+        nodes.push({
+          el,
+          text,
+          childTexts,
+          rect: {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          },
+        });
+      } catch (_) {}
+    };
 
     for (const scope of [...new Set(scopes)]) {
-      for (const sel of selectors) {
-        const nodes = scope.querySelectorAll ? [...scope.querySelectorAll(sel)] : [];
-        for (const tab of nodes) {
-          const t = normalize(tab.textContent);
-          if (!labelRe.test(t)) continue;
-          try {
-            tab.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
-          } catch (_) {}
-          dispatchPanelClick(tab);
-          return tab;
+      let foundInScope = false;
+      for (const sel of SIDE_PANEL_TAB_LEAF_SELECTORS) {
+        const elements = scope.querySelectorAll ? [...scope.querySelectorAll(sel)] : [];
+        for (const el of elements) {
+          const before = nodes.length;
+          pushNode(el);
+          if (nodes.length > before) foundInScope = true;
         }
+        if (foundInScope) break;
+      }
+      if (foundInScope) break;
+    }
+
+    if (!nodes.length) {
+      for (const scope of [...new Set(scopes)]) {
+        walkElementsWithin(scope, pushNode);
       }
     }
-    return null;
+
+    return collectSidePanelTabCandidates(nodes, window.innerWidth);
+  }
+
+  function clickSidePanelTab(labelRe, scopeRoot = null) {
+    if (scopeRoot) {
+      const text = normalizeSidePanelTabLabel(scopeRoot?.innerText || scopeRoot?.textContent || "");
+      if (labelRe.test(text)) {
+        try {
+          scopeRoot.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
+        } catch (_) {}
+        dispatchPanelClick(scopeRoot);
+        return scopeRoot;
+      }
+    }
+
+    const candidates = collectSidePanelTabElements(labelRe);
+    const tab = candidates[0]?.el;
+    if (!tab) return null;
+    try {
+      tab.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
+    } catch (_) {}
+    dispatchPanelClick(tab);
+    return tab;
   }
 
   function getStatsPanelScopedText(statsRoot, fromTab) {
@@ -522,51 +565,67 @@
     }
   }
 
+  function getMarketTabPageMode() {
+    return resolveMarketTabPageMode(location.href);
+  }
+
+  function getMarketTabsVisitList() {
+    return marketTabsVisitList(getMarketTabPageMode());
+  }
+
   function collectMarketCategoryTabs() {
-    const candidates = [];
+    const pageMode = getMarketTabPageMode();
+    const visitList = getMarketTabsVisitList();
+    const nodes = [];
     const seen = new Set();
 
-    const consider = (el) => {
+    const pushNode = (el) => {
       try {
-        const key = getLeafTabKey(el);
+        const text = normalizeLeafText(el);
+        const childTexts = [...(el?.children || [])].map((child) => normalizeLeafText(child));
+        const key = leafMarketTabKey(text, childTexts);
         if (!key || seen.has(key)) return;
         const rect = el.getBoundingClientRect();
-        if (!isInMarketTabBand(rect, window.innerHeight, window.innerWidth)) return;
+        if (!isInMarketTabBand(rect, window.innerHeight, window.innerWidth, pageMode)) return;
         seen.add(key);
-        candidates.push({ el, label: key, area: rect.width * rect.height });
+        nodes.push({
+          el,
+          text,
+          childTexts,
+          rect: {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          },
+        });
       } catch (_) {}
     };
 
     const containers = [];
-    queryDeep(
-      "[class*='Classification'], [class*='Ribbon'], [class*='MarketFilter'], [class*='CouponClassification']"
-    ).forEach((el) => {
-      const score = scoreMarketTabBarContainer(el.textContent || "");
-      if (score >= 5) containers.push({ el, score });
+    MARKET_TAB_CONTAINER_SELECTORS.forEach((sel) => {
+      queryDeep(sel).forEach((el) => {
+        const score = scoreMarketTabBarContainer(el.textContent || "");
+        if (score >= 4) containers.push({ el, score });
+      });
     });
     containers.sort((a, b) => b.score - a.score);
 
-    for (const { el } of containers.slice(0, 3)) {
-      walkTabContainer(el, consider);
-      if (candidates.length >= MARKET_CATEGORY_TABS_VISIT.length) break;
+    for (const { el } of containers.slice(0, 4)) {
+      walkTabContainer(el, pushNode);
+      if (nodes.length >= visitList.length) break;
     }
 
-    if (candidates.length < 3) {
-      const selectors = [
-        "[class*='Scroller'] [class*='Item']",
-        "[class*='Scroller'] button",
-        "[class*='Scroller'] [role='tab']",
-        "[class*='Classification'] *",
-        "button",
-        "[role='tab']",
-      ];
-      for (const sel of selectors) {
-        queryDeep(sel).forEach(consider);
-        if (candidates.length >= MARKET_CATEGORY_TABS_VISIT.length) break;
+    if (nodes.length < 3) {
+      for (const sel of MARKET_TAB_LEAF_SELECTORS) {
+        queryDeep(sel).forEach(pushNode);
+        if (nodes.length >= visitList.length) break;
       }
     }
 
-    return pickSmallestTabCandidates(candidates);
+    return collectMarketTabCandidates(nodes, window.innerHeight, window.innerWidth, pageMode).map(
+      (tab) => ({ ...tab, el: tab.el })
+    );
   }
 
   async function scrollMarketTabBars() {
@@ -621,7 +680,7 @@
     await scrollMarketTabBars();
     let tabs = collectMarketCategoryTabs();
 
-    for (const key of MARKET_CATEGORY_TABS_VISIT) {
+    for (const key of getMarketTabsVisitList()) {
       if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) break;
       let tab = tabs.find((t) => t.label === key);
       if (!tab) {
@@ -636,7 +695,7 @@
         visited.push(key);
         await delay(MARKET_TAB_CLICK_DELAY_MS);
         capture();
-        if (key === "Jogador") {
+        if (isPlayerMarketTabKey(key)) {
           await scrollPlayerPropGrids(capture, startedAt);
         }
       } catch (_) {}

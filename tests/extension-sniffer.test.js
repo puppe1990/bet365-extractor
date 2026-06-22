@@ -115,7 +115,7 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /scoreMarketTabBarContainer/);
     assert.match(template, /scrollPlayerPropGrids/);
     assert.match(template, /mergeSidePanelTabText/);
-    assert.match(template, /MARKET_CATEGORY_TABS/);
+    assert.match(template, /marketTabsVisitList/);
     assert.match(template, /scrapeMarketsViaScripting/);
     assert.match(template, /SCROLL_MARKETS/);
     assert.match(template, /mainWorldScroll/);
@@ -123,6 +123,11 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /EventViewDetailScroller/);
     assert.match(template, /scrollIntoView/);
     assert.match(template, /SIDE_PANEL_TAB_KEYS/);
+    assert.match(template, /SIDE_PANEL_TAB_SCOPE_SELECTORS/);
+    assert.match(template, /collectSidePanelTabElements/);
+    assert.match(template, /getMarketTabsVisitList/);
+    assert.match(template, /resolveMarketTabPageMode/);
+    assert.match(template, /isPlayerMarketTabKey/);
     assert.match(template, /extractSidePanelFromTexts/);
     assert.doesNotMatch(
       template,
@@ -198,13 +203,24 @@ describe("extension sniffer wiring", () => {
     assert.match(source, /visitMarketCategoryTabs/);
     assert.match(source, /collectMarketCategoryTabs/);
     assert.match(source, /scrollPlayerPropGrids/);
-    assert.match(source, /MARKET_CATEGORY_TABS/);
+    assert.match(source, /MARKET_CATEGORY_TABS_VISIT/);
     assert.match(source, /Instantâneas/);
     assert.match(source, /Escanteios\/Cartões/);
     assert.match(source, /Jogador/);
     assert.match(source, /tabsVisited/);
     assert.match(source, /tabsFound/);
     assert.match(source, /dispatchTabClick/);
-    assert.match(source, /leafTabKey/);
+    assert.match(source, /collectMarketTabCandidates/);
+    assert.match(source, /PREMATCH_MARKET_TABS_VISIT/);
+    assert.match(source, /Jogador a Marcar/);
+    assert.match(source, /MARKET_TAB_CONTAINER_SELECTORS/);
+  });
+
+  it("main-world-scroll é gerado a partir do template de build", () => {
+    const template = readBuilt("templates/main-world-scroll.js");
+    const built = readBuilt("extension/main-world-scroll.js");
+    assert.match(template, /\/\* __MARKET_TABS__ \*\//);
+    assert.doesNotMatch(built, /\/\* __MARKET_TABS__ \*\//);
+    assert.match(built, /function collectMarketTabCandidates/);
   });
 });

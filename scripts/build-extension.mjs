@@ -24,6 +24,9 @@ const networkParse = stripModuleSyntax(
 const urlHelpers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-url.js"), "utf8"));
 const parsers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-parsers.js"), "utf8"));
 const sidePanel = stripModuleSyntax(readFileSync(join(root, "lib/bet365-side-panel.js"), "utf8"));
+const sidePanelTabs = stripModuleSyntax(
+  readFileSync(join(root, "lib/bet365-side-panel-tabs.js"), "utf8")
+);
 const marketTabs = stripModuleSyntax(readFileSync(join(root, "lib/bet365-market-tabs.js"), "utf8"));
 const statsSubtabs = stripModuleSyntax(
   readFileSync(join(root, "lib/bet365-stats-subtabs.js"), "utf8")
@@ -47,6 +50,7 @@ const parserBundle = [
   marketTabs,
   statsSubtabs,
   sidePanel,
+  sidePanelTabs,
 ].join("\n\n");
 const inject = (source, marker, chunk) => source.split(marker).join(chunk);
 const content = inject(
@@ -57,6 +61,10 @@ const content = inject(
 
 mkdirSync(join(root, "extension/dist"), { recursive: true });
 writeFileSync(join(root, "extension/dist/content.js"), content);
+
+const mainWorldTemplate = readFileSync(join(root, "templates/main-world-scroll.js"), "utf8");
+const mainWorldScroll = mainWorldTemplate.replace("/* __MARKET_TABS__ */", () => marketTabs);
+writeFileSync(join(root, "extension/main-world-scroll.js"), mainWorldScroll);
 const zipUtils = `${format}\n\n${zip}\n
 globalThis.buildZipEntries = buildZipEntries;
 globalThis.buildZipFilename = buildZipFilename;
@@ -67,4 +75,5 @@ writeFileSync(join(root, "extension/dist/zip-utils.js"), zipUtils);
 writeFileSync(join(root, "extension/dist/network-page-sniffer.js"), pageSniffer);
 
 console.log("built extension/dist/content.js");
+console.log("built extension/main-world-scroll.js");
 console.log("built extension/dist/zip-utils.js");
