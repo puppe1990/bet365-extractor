@@ -103,6 +103,8 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /INJECT_SNIFFER/);
     assert.match(template, /collectSidePanelTexts/);
     assert.match(template, /collectStatsSubTabTexts/);
+    assert.match(template, /collectStatsSubTabTexts\(statsRoot, statsTab\)/);
+    assert.match(template, /function collectStatsSubTabCandidates\(root, fromTab/);
     assert.match(template, /STATS_SUB_TAB_KEYS/);
     assert.match(template, /extractStatsFromSubTabTexts/);
     assert.match(template, /getSidePanelText/);

@@ -2292,7 +2292,11 @@ function collectMarketTabCandidates(
       normalizeMarketTabLabel(childText)
     );
     let key = leafMarketTabKey(text, childTexts);
-    if (!key && isMarketTabLeafText(text) && !childTexts.some((childText) => marketCategoryTabKey(childText))) {
+    if (
+      !key &&
+      isMarketTabLeafText(text) &&
+      !childTexts.some((childText) => marketCategoryTabKey(childText))
+    ) {
       key = marketCategoryTabKey(text);
     }
     if (!key || seen.has(key)) continue;
@@ -2381,7 +2385,10 @@ function shouldTreatAsMarketRibbonNotStats(text) {
   if (!MARKET_RIBBON_SIGNAL_RE.test(s)) return false;
   if (!looksLikeLiveStatsPanelText(s)) return true;
   if (gluedStatsSubTabCount(s) >= 3) return false;
-  if (/Estat\.|Cronologia|Escalação|Tabela/i.test(s) && !/Jogador a Marcar ou Dar Assistência/i.test(s)) {
+  if (
+    /Estat\.|Cronologia|Escalação|Tabela/i.test(s) &&
+    !/Jogador a Marcar ou Dar Assistência/i.test(s)
+  ) {
     return false;
   }
   if (/Ataques Perigosos|% de Posse|Finalizações\s*\/\s*Chutes ao Gol/i.test(s)) return false;
@@ -3975,7 +3982,7 @@ function collectFrameWalkTexts() {
     return best;
   }
 
-  function collectStatsSubTabCandidates(root) {
+  function collectStatsSubTabCandidates(root, fromTab = null) {
     const candidates = [];
     const seen = new Set();
     const scope = root;
@@ -4136,7 +4143,7 @@ function collectFrameWalkTexts() {
     return "";
   }
 
-  async function collectStatsSubTabTexts(statsRoot) {
+  async function collectStatsSubTabTexts(statsRoot, fromTab = null) {
     const textBySubTab = {};
     const subTabClicks = {};
     const startedAt = Date.now();
@@ -4151,14 +4158,14 @@ function collectFrameWalkTexts() {
     }
 
     scrollStatsSubTabBars(statsRoot);
-    let tabs = collectStatsSubTabCandidates(statsRoot);
+    let tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
 
     for (const key of STATS_SUB_TAB_KEYS) {
       if (Date.now() - startedAt > STATS_SUB_TAB_VISIT_BUDGET_MS) break;
       let tab = tabs.find((t) => t.key === key);
       if (!tab) {
         scrollStatsSubTabBars(statsRoot);
-        tabs = collectStatsSubTabCandidates(statsRoot);
+        tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
         tab = tabs.find((t) => t.key === key);
       }
       if (!tab) continue;
@@ -4197,7 +4204,7 @@ function collectFrameWalkTexts() {
       textBySubTab,
       subTabClicks,
       skipped: statsSubTabsSkipped,
-    } = await collectStatsSubTabTexts(statsRoot);
+    } = await collectStatsSubTabTexts(statsRoot, statsTab);
     textByTab.statsSubTabs = textBySubTab;
     textByTab.statsSubTabClicks = subTabClicks;
     textByTab.statsSubTabMerged = mergeStatsSubTabTexts(textBySubTab);

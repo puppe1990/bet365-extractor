@@ -206,7 +206,7 @@
     return best;
   }
 
-  function collectStatsSubTabCandidates(root) {
+  function collectStatsSubTabCandidates(root, fromTab = null) {
     const candidates = [];
     const seen = new Set();
     const scope = root;
@@ -367,7 +367,7 @@
     return "";
   }
 
-  async function collectStatsSubTabTexts(statsRoot) {
+  async function collectStatsSubTabTexts(statsRoot, fromTab = null) {
     const textBySubTab = {};
     const subTabClicks = {};
     const startedAt = Date.now();
@@ -382,14 +382,14 @@
     }
 
     scrollStatsSubTabBars(statsRoot);
-    let tabs = collectStatsSubTabCandidates(statsRoot);
+    let tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
 
     for (const key of STATS_SUB_TAB_KEYS) {
       if (Date.now() - startedAt > STATS_SUB_TAB_VISIT_BUDGET_MS) break;
       let tab = tabs.find((t) => t.key === key);
       if (!tab) {
         scrollStatsSubTabBars(statsRoot);
-        tabs = collectStatsSubTabCandidates(statsRoot);
+        tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
         tab = tabs.find((t) => t.key === key);
       }
       if (!tab) continue;
@@ -428,7 +428,7 @@
       textBySubTab,
       subTabClicks,
       skipped: statsSubTabsSkipped,
-    } = await collectStatsSubTabTexts(statsRoot);
+    } = await collectStatsSubTabTexts(statsRoot, statsTab);
     textByTab.statsSubTabs = textBySubTab;
     textByTab.statsSubTabClicks = subTabClicks;
     textByTab.statsSubTabMerged = mergeStatsSubTabTexts(textBySubTab);
