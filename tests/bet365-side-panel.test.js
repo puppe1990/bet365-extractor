@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 
 import {
   parseTimelineFromText,
+  mergeTimelineSectionTexts,
   parseLineupFromText,
   parseLineupFromNetworkBlob,
   parsePlayerFinalizationsFromText,
@@ -26,6 +27,38 @@ import {
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const readFixture = (name) => readFileSync(join(__dir, "fixtures", name), "utf8");
+
+describe("mergeTimelineSectionTexts", () => {
+  it("combina snapshots de scroll da cronologia sem perder eventos antigos", () => {
+    const recent = `Cronologia
+31'
+2º Escanteio
+26'
+Substituição
+Al-Hamadi
+Hussein
+1º Goal
+Mbappe - Chute
+Olise - Assist
+15'`;
+
+    const older = `Cronologia
+15'
+8'
+1º Escanteio
+7'
+1º Cartão Amarelo
+Al Ammari`;
+
+    const merged = mergeTimelineSectionTexts(recent, older);
+    const events = parseTimelineFromText(merged);
+    const corners = events.filter((e) => e.type === "corner");
+
+    assert.equal(corners.find((e) => /1[º°]/.test(e.description))?.minute, 8);
+    assert.equal(corners.find((e) => /2[º°]/.test(e.description))?.minute, 31);
+    assert.equal(events.find((e) => e.type === "goal")?.minute, 15);
+  });
+});
 
 describe("parseTimelineFromText", () => {
   it("extrai gols, escanteios e impedimentos", () => {

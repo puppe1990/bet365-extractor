@@ -112,6 +112,9 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /extractStatsFromSubTabTexts/);
     assert.match(template, /getSidePanelText/);
     assert.match(template, /findSidePanelRoot/);
+    assert.match(template, /scrollTimelinePanel/);
+    assert.match(template, /mergeTimelineSectionTexts/);
+    assert.match(template, /TIMELINE_SCROLL_FRACTIONS/);
     assert.match(template, /scrollLeftColumnMarkets/);
     assert.match(template, /visitMarketCategoryTabs/);
     assert.match(template, /collectMarketCategoryTabs/);

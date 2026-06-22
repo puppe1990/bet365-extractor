@@ -434,6 +434,45 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  const TIMELINE_SCROLL_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
+
+  async function scrollTimelinePanel(fromTab) {
+    const root = findSidePanelRoot(fromTab);
+    if (!root) return { text: "", scrollSteps: 0, container: null };
+
+    const targets = collectScrollableTargets(root);
+    const scrollEl =
+      targets.find((el) => el.scrollHeight > el.clientHeight + 20) || targets[0] || root;
+    const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    const originalTop = scrollEl.scrollTop;
+    const snapshots = [];
+
+    const capture = () => {
+      const t = root.innerText || scrollEl.innerText || "";
+      if (t) snapshots.push(t);
+    };
+
+    capture();
+
+    if (maxScroll >= 20) {
+      for (const fraction of TIMELINE_SCROLL_FRACTIONS) {
+        scrollEl.scrollTop = Math.floor(maxScroll * fraction);
+        scrollEl.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await delay(60);
+        capture();
+      }
+    }
+
+    scrollEl.scrollTop = originalTop;
+
+    const merged = mergeTimelineSectionTexts(...snapshots);
+    return {
+      text: merged || snapshots[0] || "",
+      scrollSteps: snapshots.length,
+      container: String(scrollEl.className || "timeline-scroll").slice(0, 80),
+    };
+  }
+
   async function collectSidePanelTexts() {
     const textByTab = {};
     const tabClicks = {};
@@ -441,6 +480,7 @@
     const textBySubTab = {};
     const subTabClicks = {};
     let statsSubTabsSkipped = null;
+    let timelineScrollMeta = null;
     const sidePanelStartedAt = Date.now();
     const sidePanelRemainingMs = () =>
       Math.max(0, SIDE_PANEL_VISIT_BUDGET_MS - (Date.now() - sidePanelStartedAt));
@@ -472,7 +512,18 @@
       const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key]);
       tabClicks[key] = Boolean(tab);
       if (tab) await delay(essential ? 180 : 120);
-      textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
+      if (key === "timeline" && tab) {
+        const scrolled = await scrollTimelinePanel(tab);
+        timelineScrollMeta = scrolled;
+        const timelineText = mergeTimelineSectionTexts(getSidePanelText(tab), scrolled.text);
+        textByTab[key] = mergeSidePanelTabText(
+          timelineText || getSidePanelText(tab),
+          fullText,
+          key
+        );
+      } else {
+        textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
+      }
     }
 
     const ingested = ingestSidePanelTabStats(textByTab, textBySubTab, subTabClicks);
@@ -486,7 +537,13 @@
 
     clickSidePanelTab(SIDE_PANEL_TAB_LABELS.stats);
 
-    return { textByTab, tabClicks, statsSubTabClicks: subTabClicks, statsSubTabsSkipped };
+    return {
+      textByTab,
+      tabClicks,
+      statsSubTabClicks: subTabClicks,
+      statsSubTabsSkipped,
+      timelineScrollMeta,
+    };
   }
 
   function isScrollableElement(el) {
@@ -1137,7 +1194,7 @@
     stepAt = Date.now();
 
     const extractedAt = new Date().toISOString();
-    const { textByTab, tabClicks, statsSubTabClicks, statsSubTabsSkipped } =
+    const { textByTab, tabClicks, statsSubTabClicks, statsSubTabsSkipped, timelineScrollMeta } =
       await collectSidePanelTexts();
     const pageText = getAllVisibleText();
     const sideText = Object.values(textByTab).filter(Boolean).join("\n---SIDE-TAB---\n");
@@ -1149,6 +1206,7 @@
         SIDE_PANEL_TAB_KEYS.map((k) => `${k}=${tabClicks[k] ? "ok" : "miss"}`).join(", "),
         `subtabs=${STATS_SUB_TAB_KEYS.filter((k) => statsSubTabClicks?.[k]).join(",") || "none"}`,
         statsSubTabsSkipped ? `subtabsSkip=${statsSubTabsSkipped}` : null,
+        timelineScrollMeta?.scrollSteps ? `timelineScroll=${timelineScrollMeta.scrollSteps}` : null,
       ]
         .filter(Boolean)
         .join(" | "),
