@@ -19,6 +19,15 @@ import {
   mergeOdds,
   mergeMatchCandidates,
   isLikelyWallClock,
+  sanitizeMatchClock,
+  isLikelyBettingMarket,
+  isJunkOddsMarket,
+  isJunkOddsSelection,
+  isTimelineLeakMarket,
+  isTimelineLeakSelection,
+  isLikelyMinuteAsOdd,
+  isLikelyStatCountAsOdd,
+  isLikelyScoreboardSelection,
   assessMatchConfidence,
   finalizeMatchData,
   looksLikeScoreboardText,
@@ -27,11 +36,38 @@ import {
   isValidSelection,
   isValidOdd,
   parseOdd,
+  splitAtaquesPerigososGlued,
+  isJunkTeamGoalsSelection,
+  isJunkPlayerPropSelection,
 } from "../lib/bet365-parsers.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = readFileSync(
   join(__dir, "fixtures/uruguay-cabo-verde-glued.txt"),
+  "utf8"
+);
+const INPLAY_ODDS_FIXTURE = readFileSync(
+  join(__dir, "fixtures/inplay-odds-visible.txt"),
+  "utf8"
+);
+const INPLAY_NOISE_FIXTURE = readFileSync(
+  join(__dir, "fixtures/inplay-noise-visible.txt"),
+  "utf8"
+);
+const PLAYER_GRIDS_FIXTURE = readFileSync(
+  join(__dir, "fixtures/argentina-austria-player-grids.txt"),
+  "utf8"
+);
+const TEAM_GOALS_FIXTURE = readFileSync(
+  join(__dir, "fixtures/argentina-austria-team-goals.txt"),
+  "utf8"
+);
+const CRONOLOGIA_ODDS_LEAK_FIXTURE = readFileSync(
+  join(__dir, "fixtures/cronologia-odds-leak.txt"),
+  "utf8"
+);
+const INTERVAL_ODDS_LEAK_FIXTURE = readFileSync(
+  join(__dir, "fixtures/interval-odds-leak.txt"),
   "utf8"
 );
 
@@ -58,6 +94,36 @@ describe("parseGluedStats", () => {
 
   it("retorna array vazio para texto sem stats", () => {
     assert.deepEqual(parseGluedStats("nada aqui"), []);
+  });
+
+  it("não confunde 4 e 13 em Ataques Perigosos colados", () => {
+    const stats = parseGluedStats(
+      "Ataques1519Ataques Perigosos413% de Posse5050Finalizações"
+    );
+    const row = stats.find((s) => s.label === "Ataques Perigosos");
+    assert.equal(row?.home, "4");
+    assert.equal(row?.away, "13");
+  });
+
+  it("separa 17 e 27 em Ataques Perigosos colados", () => {
+    const stats = parseGluedStats(
+      "Ataques1725Ataques Perigosos1727% de Posse4852Finalizações"
+    );
+    const row = stats.find((s) => s.label === "Ataques Perigosos");
+    assert.equal(row?.home, "17");
+    assert.equal(row?.away, "27");
+  });
+});
+
+describe("splitAtaquesPerigososGlued", () => {
+  it("mantém splits já corrigidos para 3 dígitos", () => {
+    assert.deepEqual(splitAtaquesPerigososGlued("413"), { home: "4", away: "13" });
+    assert.deepEqual(splitAtaquesPerigososGlued("407"), { home: "40", away: "7" });
+    assert.deepEqual(splitAtaquesPerigososGlued("519"), { home: "5", away: "19" });
+  });
+
+  it("faz split 2+2 para valores altos", () => {
+    assert.deepEqual(splitAtaquesPerigososGlued("1727"), { home: "17", away: "27" });
   });
 });
 
@@ -215,6 +281,35 @@ describe("isLikelyWallClock", () => {
     assert.equal(isLikelyWallClock("72:14", extractedAt), false);
     assert.equal(isLikelyWallClock("45:00", extractedAt), false);
   });
+
+  it("não trata minutos iniciais de jogo como horário de parede", () => {
+    const extractedAt = "2026-06-22T17:05:17.930Z";
+    assert.equal(isLikelyWallClock("04:18", extractedAt), false);
+    assert.equal(isLikelyWallClock("12:30", extractedAt), false);
+    assert.equal(isLikelyWallClock("23:15", extractedAt), false);
+  });
+});
+
+describe("sanitizeMatchClock", () => {
+  it("preserva relógio de início de jogo no scoreboard", () => {
+    const extractedAt = "2026-06-22T17:05:17.930Z";
+    const match = sanitizeMatchClock(
+      { score: "0-0", clock: "04:18", source: "dom-scoreboard" },
+      extractedAt
+    );
+
+    assert.equal(match.clock, "04:18");
+  });
+
+  it("integra relógio cedo via mergeMatchCandidates", () => {
+    const extractedAt = "2026-06-22T17:05:17.930Z";
+    const match = mergeMatchCandidates(
+      { score: "0-0", clock: "04:18", source: "dom-scoreboard" },
+      { extractedAt }
+    );
+
+    assert.equal(match.clock, "04:18");
+  });
 });
 
 describe("mergeMatchCandidates", () => {
@@ -322,6 +417,186 @@ describe("parseOddsFromVisibleText", () => {
     assert.equal(bySelection["Cabo Verde"].odds, 34);
     assert.ok(odds.every((o) => o.source === "visible-text"));
   });
+
+  it("associa mercados e linhas de gols do texto visível ao vivo", () => {
+    const odds = parseOddsFromVisibleText(INPLAY_ODDS_FIXTURE);
+    const byKey = Object.fromEntries(
+      odds.map((o) => [`${o.market}|${o.selection}`, o])
+    );
+
+    assert.equal(byKey["Resultado Final|Time Casa"].odds, 1.5);
+    assert.equal(byKey["Resultado Final|Empate"].odds, 4);
+    assert.equal(byKey["Resultado Final|Time Fora"].odds, 7);
+    assert.equal(byKey["Partida - Gols|Mais de 2.5"].odds, 2);
+    assert.equal(byKey["Partida - Gols|Menos de 2.5"].odds, 1.8);
+    assert.equal(byKey["Intervalo - Resultado|Time Casa"].odds, 2.1);
+    assert.ok(odds.every((o) => o.market !== "CA" && o.market !== "—"));
+  });
+});
+
+describe("isLikelyBettingMarket", () => {
+  it("aceita mercados de aposta e rejeita ruído de UI", () => {
+    assert.equal(isLikelyBettingMarket("Partida - Gols"), true);
+    assert.equal(isLikelyBettingMarket("Intervalo - Resultado"), true);
+    assert.equal(isLikelyBettingMarket("Escalação"), false);
+    assert.equal(isLikelyBettingMarket("—"), false);
+  });
+});
+
+describe("isJunkOddsMarket", () => {
+  it("rejeita rodapé legal, stats e botões de UI", () => {
+    assert.equal(
+      isJunkOddsMarket(
+        "HS do Brasil Ltda é regulada e autorizada pela Secretaria de Prêmios e Apostas do Ministério da Fazenda (Portaria SPA/MF Nº 250, de 07/02/2025)."
+      ),
+      true
+    );
+    assert.equal(
+      isJunkOddsMarket(
+        "Você não deve utilizar os recursos de programas e benefícios assistenciais para apostar."
+      ),
+      true
+    );
+    assert.equal(isJunkOddsMarket("Goleiro - Defesas"), true);
+    assert.equal(isJunkOddsMarket("Exibir Totais da Partida"), true);
+    assert.equal(isJunkOddsMarket("Resultados"), true);
+    assert.equal(isJunkOddsMarket("Partida - Gols"), false);
+  });
+});
+
+describe("team and player junk filters", () => {
+  it("rejeita seleções inválidas em mercados Time - Gols", () => {
+    assert.equal(isJunkTeamGoalsSelection("Áustria - Gols", "Áustria"), true);
+    assert.equal(isJunkTeamGoalsSelection("Áustria - Gols", "M Gregoritsch"), true);
+    assert.equal(isJunkTeamGoalsSelection("Áustria - Gols", "Mais de 1.5"), false);
+    assert.equal(isJunkTeamGoalsSelection("Áustria - Gols", "Menos de 1.5"), false);
+    assert.equal(isJunkTeamGoalsSelection("Partida - Gols", "Mais de 2.5"), false);
+  });
+
+  it("rejeita linhas Mais/Menos em mercados de jogador", () => {
+    assert.equal(
+      isJunkPlayerPropSelection("Jogador - Assistências", "Menos de 5.50"),
+      true
+    );
+    assert.equal(
+      isJunkPlayerPropSelection("Jogador - Assistências", "Lionel Messi - 1+"),
+      false
+    );
+  });
+});
+
+describe("timeline leak odds filters", () => {
+  it("identifica mercados e seleções da cronologia", () => {
+    assert.equal(isTimelineLeakMarket("1° Escanteio"), true);
+    assert.equal(isTimelineLeakMarket("4° Gol"), false);
+    assert.equal(isTimelineLeakMarket("Messi - Chute"), true);
+    assert.equal(isTimelineLeakSelection("Medina - Assist"), true);
+    assert.equal(isLikelyMinuteAsOdd(41, "1° Escanteio", "S Posch"), true);
+    assert.equal(isLikelyMinuteAsOdd(39, "Messi - Chute", "Medina - Assist"), true);
+    assert.equal(isLikelyStatCountAsOdd(3, "Jogador - Chutes", "Lionel Messi"), true);
+    assert.equal(isLikelyScoreboardSelection("Resultado Após Primeira Parte 1-0"), true);
+    assert.equal(isLikelyMinuteAsOdd(45, "Jogador - Chutes", "Áustria"), true);
+    assert.equal(isLikelyBettingMarket("Messi - Chute"), false);
+  });
+
+  it("não promove eventos da cronologia a odds", () => {
+    const odds = parseOddsFromVisibleText(CRONOLOGIA_ODDS_LEAK_FIXTURE);
+
+    assert.ok(!odds.some((o) => o.market === "Messi - Chute"));
+    assert.ok(!odds.some((o) => o.selection === "Medina - Assist"));
+    assert.ok(!odds.some((o) => o.market === "1° Escanteio" && o.selection === "S Posch"));
+    assert.ok(odds.some((o) => o.market === "Resultado Final" && o.selection === "Argentina"));
+  });
+
+  it("filtra minuto, placar e contagem de chutes vazando como odd", () => {
+    const odds = parseOddsFromVisibleText(INTERVAL_ODDS_LEAK_FIXTURE);
+
+    assert.ok(!odds.some((o) => o.selection === "Áustria" && o.odds === 45));
+    assert.ok(!odds.some((o) => o.selection === "Lionel Messi" && o.odds === 3));
+    assert.ok(
+      !odds.some((o) => o.selection === "Resultado Após Primeira Parte 1-0" && o.odds === 41)
+    );
+    assert.ok(odds.some((o) => o.market === "Resultado Final" && o.selection === "Argentina"));
+    assert.ok(!odds.some((o) => o.selection === "Cronologia"));
+  });
+});
+
+describe("isJunkOddsSelection", () => {
+  it("rejeita stats, placares de outros jogos e linhas inválidas", () => {
+    assert.equal(isJunkOddsSelection("Ataques"), true);
+    assert.equal(isJunkOddsSelection("% de Posse"), true);
+    assert.equal(isJunkOddsSelection("3 Jordânia 1 -2 0"), true);
+    assert.equal(isJunkOddsSelection("Menos de 19.00"), true);
+    assert.equal(isJunkOddsSelection("Mais de 2.5"), false);
+    assert.equal(isJunkOddsSelection("Jogadores Titulares"), true);
+    assert.equal(isJunkOddsSelection("Exibir Totais da Partida"), true);
+    assert.equal(isJunkOddsSelection("Lionel Messi"), false);
+  });
+});
+
+describe("parseOddsFromVisibleText noise filtering", () => {
+  it("parseia grades de gols e ignora ruído de footer, stats e outros jogos", () => {
+    const odds = parseOddsFromVisibleText(INPLAY_NOISE_FIXTURE);
+    const byKey = Object.fromEntries(
+      odds.map((o) => [`${o.market}|${o.selection}`, o])
+    );
+
+    assert.equal(byKey["Partida - Gols - Mais Opções|Mais de 0.5"].odds, 1.083);
+    assert.equal(byKey["Partida - Gols - Mais Opções|Menos de 5.5"].odds, 1.02);
+    assert.equal(byKey["Total de Gols - 1º Tempo|Mais de 2.5"].odds, 11);
+    assert.equal(byKey["Total de Gols - 1º Tempo|Menos de 2.5"].odds, 1.05);
+    assert.equal(byKey["Marcadores de Gol|Lionel Messi"].odds, 1.95);
+
+    assert.ok(!odds.some((o) => o.market.includes("HS do Brasil")));
+    assert.ok(!odds.some((o) => o.market === "Goleiro - Defesas"));
+    assert.ok(!odds.some((o) => o.market === "Exibir Totais da Partida"));
+    assert.ok(!odds.some((o) => o.market === "Resultados"));
+    assert.ok(!odds.some((o) => o.selection === "Exibir Totais da Partida"));
+    assert.ok(!odds.some((o) => o.selection.includes("Jordânia")));
+    assert.ok(!odds.some((o) => /Menos de (19|11)\.00/.test(o.selection)));
+    assert.ok(!odds.some((o) => o.selection === "Ataques"));
+  });
+
+  it("parseia grades de jogador e filtra ruído em Time - Gols", () => {
+    const odds = parseOddsFromVisibleText(`${PLAYER_GRIDS_FIXTURE}\n${TEAM_GOALS_FIXTURE}`);
+    const byKey = Object.fromEntries(
+      odds.map((o) => [`${o.market}|${o.selection}`, o])
+    );
+
+    assert.equal(byKey["Jogador - Assistências|Lionel Messi - 1+"].odds, 4.33);
+    assert.equal(byKey["Jogador - Assistências|Rodrigo De Paul - 1+"].odds, 4.5);
+    assert.equal(byKey["Jogador - Assistências|Thiago Almada - 1+"].odds, 6);
+    assert.equal(byKey["Jogador - Chutes|Lionel Messi - 1+"].odds, 1.04);
+    assert.equal(byKey["Jogador - Chutes|Lionel Messi - 2+"].odds, 1.22);
+    assert.equal(byKey["Jogador - Chutes|Lautaro Martinez - 3+"].odds, 2.62);
+    assert.equal(byKey["Áustria - Gols|Mais de 1.5"].odds, 8);
+    assert.equal(byKey["Áustria - Gols|Menos de 1.5"].odds, 1.083);
+    assert.equal(byKey["Argentina - Gols|Mais de 2.5"].odds, 5.8);
+
+    assert.ok(!odds.some((o) => o.market === "Áustria - Gols" && o.selection === "Áustria"));
+    assert.ok(!odds.some((o) => o.market === "Áustria - Gols" && o.selection === "M Gregoritsch"));
+    assert.ok(
+      !odds.some(
+        (o) => o.market === "Jogador - Assistências" && /^Menos de /.test(o.selection)
+      )
+    );
+  });
+
+  it("cleanOdds remove entradas lixo que escaparem do parser", () => {
+    const cleaned = cleanOdds([
+      { market: "Resultado Final", selection: "Time Casa", odds: 1.5, source: "dom" },
+      {
+        market: "HS do Brasil Ltda é regulada",
+        selection: "Ataques",
+        odds: 5,
+        source: "visible-text",
+      },
+      { market: "Partida - Gols", selection: "Mais de 2.5", odds: 2.2, source: "visible-text" },
+    ]);
+
+    assert.equal(cleaned.length, 2);
+    assert.ok(cleaned.every((o) => !o.market.includes("HS do Brasil")));
+  });
 });
 
 describe("mergeOdds", () => {
@@ -403,6 +678,47 @@ describe("mergeOdds", () => {
     assert.equal(merged.length, 1);
     assert.equal(merged[0].odds, 1.062);
     assert.equal(merged[0].source, "dom");
+  });
+
+  it("inclui mercados novos do visible-text além dos do DOM", () => {
+    const merged = mergeOdds(
+      [
+        { market: "Resultado Final", selection: "Time Casa", odds: 1.5, source: "dom" },
+        { market: "Resultado Final", selection: "Empate", odds: 4, source: "dom" },
+        { market: "Resultado Final", selection: "Time Fora", odds: 7, source: "dom" },
+      ],
+      [
+        { market: "Partida - Gols", selection: "Mais de 2.5", odds: 2, source: "visible-text" },
+        { market: "Partida - Gols", selection: "Menos de 2.5", odds: 1.8, source: "visible-text" },
+        {
+          market: "Intervalo - Resultado",
+          selection: "Time Casa",
+          odds: 2.1,
+          source: "visible-text",
+        },
+        { market: "Escalação", selection: "Ataques", odds: 76, source: "visible-text" },
+      ]
+    );
+
+    assert.equal(merged.length, 6);
+    assert.ok(merged.some((o) => o.market === "Partida - Gols"));
+    assert.ok(merged.some((o) => o.market === "Intervalo - Resultado"));
+    assert.ok(merged.every((o) => o.market !== "Escalação"));
+  });
+
+  it("combina DOM parcial com parseOddsFromVisibleText completo", () => {
+    const visible = parseOddsFromVisibleText(INPLAY_ODDS_FIXTURE);
+    const merged = mergeOdds(
+      [
+        { market: "Resultado Final", selection: "Time Casa", odds: 1.5, source: "dom" },
+        { market: "Resultado Final", selection: "Empate", odds: 4, source: "dom" },
+      ],
+      visible
+    );
+
+    assert.ok(merged.length >= 8);
+    assert.ok(merged.some((o) => o.market === "Partida - Gols"));
+    assert.ok(merged.some((o) => o.selection === "Menos de 2.5"));
   });
 });
 
