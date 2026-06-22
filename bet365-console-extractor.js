@@ -347,7 +347,7 @@ function extractNetworkHints(text, url = "") {
   };
 }
 
-const BET365_HOST_RE = /bet365/i;
+const BET365_NETWORK_HOST_RE = /bet365/i;
 const NETWORK_PAYLOAD_HINTS =
   /stats|stat|odds|market|fixture|event|score|participant|mg|pa|ss|tu|tm|sc|xg|attack|possess|inplay|EV\d+/i;
 
@@ -362,7 +362,7 @@ function resolveNetworkUrl(input) {
 }
 
 function isBet365NetworkUrl(url) {
-  return BET365_HOST_RE.test(resolveNetworkUrl(url));
+  return BET365_NETWORK_HOST_RE.test(resolveNetworkUrl(url));
 }
 
 function looksLikeBet365NetworkPayload(data) {
@@ -534,7 +534,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.3";
+const VERSION = "3.10.4";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento)/i;

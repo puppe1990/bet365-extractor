@@ -53,7 +53,15 @@ function renderPreview(data) {
 }
 
 async function extractFromTab(tabId) {
-  return chrome.runtime.sendMessage({ type: "EXTRACT_TAB", tabId });
+  try {
+    return await chrome.runtime.sendMessage({ type: "EXTRACT_TAB", tabId });
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (/receiving end does not exist/i.test(msg)) {
+      throw new Error("Extensão não conectou — recarregue em chrome://extensions e dê F5 na Bet365");
+    }
+    throw err;
+  }
 }
 
 async function createZipBlob(data) {
