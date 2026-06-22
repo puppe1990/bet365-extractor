@@ -21,6 +21,7 @@ const protocolDecode = stripModuleSyntax(
 const networkParse = stripModuleSyntax(
   readFileSync(join(root, "lib/bet365-network-parse.js"), "utf8")
 );
+const urlHelpers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-url.js"), "utf8"));
 const parsers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-parsers.js"), "utf8"));
 const format = stripModuleSyntax(readFileSync(join(root, "lib/bet365-format.js"), "utf8"));
 
@@ -31,7 +32,7 @@ const shell = readFileSync(join(root, "templates/console-shell.js"), "utf8");
 const output = shell
   .replace(
     "/* __PARSERS__ */",
-    `${marketInference}\n\n${protocolDecode}\n\n${networkParse}\n\n${parsers}\n\n${format}`
+    `${marketInference}\n\n${protocolDecode}\n\n${networkParse}\n\n${urlHelpers}\n\n${parsers}\n\n${format}`
   )
   .replace("/* __NETWORK__ */", network.replace("/* __INSTALL_SNIFFER__ */", "installNetworkSniffer();"))
   .replace("/* __FRAMES__ */", frames);

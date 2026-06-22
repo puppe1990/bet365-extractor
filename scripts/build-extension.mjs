@@ -21,6 +21,7 @@ const protocolDecode = stripModuleSyntax(
 const networkParse = stripModuleSyntax(
   readFileSync(join(root, "lib/bet365-network-parse.js"), "utf8")
 );
+const urlHelpers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-url.js"), "utf8"));
 const parsers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-parsers.js"), "utf8"));
 const format = stripModuleSyntax(readFileSync(join(root, "lib/bet365-format.js"), "utf8"));
 const zip = stripModuleSyntax(readFileSync(join(root, "lib/bet365-zip.js"), "utf8"));
@@ -35,7 +36,7 @@ const extTemplate = readFileSync(join(root, "templates/extension-content.js"), "
 const content = extTemplate
   .replace(
     "/* __PARSERS__ */",
-    `${marketInference}\n\n${protocolDecode}\n\n${networkParse}\n\n${parsers}`
+    `${marketInference}\n\n${protocolDecode}\n\n${networkParse}\n\n${urlHelpers}\n\n${parsers}`
   )
   .replace("/* __NETWORK__ */", network)
   .replace("/* __FRAMES__ */", frames);

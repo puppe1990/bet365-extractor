@@ -303,7 +303,11 @@
     pipeline.push({ step: "matchCandidates", count: matchCandidates.length, ms: Date.now() - stepAt });
     stepAt = Date.now();
 
-    const matchBase = mergeMatchCandidates(...matchCandidates, { extractedAt }) || {};
+    const matchBase =
+      resolveMatchForPage(matchCandidates, {
+        extractedAt,
+        pageUrl: location.href,
+      }) || {};
     pipeline.push({
       step: "mergeMatch",
       detail: matchBase.score ? `${matchBase.score} (${matchBase.source})` : "none",
@@ -337,7 +341,8 @@
       odds,
       visibleText,
       meta,
-      extractedAt
+      extractedAt,
+      location.href
     );
     pipeline.push({
       step: "marketInference",

@@ -471,7 +471,58 @@ function matchCandidatesFromNetworkText(text, source = "net-text") {
   return candidates;
 }
 
-const VERSION = "3.10.2";
+const BET365_HOST_RE = /bet365\.(bet\.br|com|bet)/i;
+
+/** Live in-play: #/IP/EV151352326532C1/ */
+const BET365_IP_EVENT_RE = /#\/IP\/EV\d+/i;
+
+/** Pre-match / competition: #/AC/.../E194699812/... */
+const BET365_AC_EVENT_RE = /\/E\d{6,}\b/i;
+
+function extractBet365EventId(urlOrHash = "") {
+  const hash = String(urlOrHash).includes("#")
+    ? String(urlOrHash).split("#")[1] || ""
+    : String(urlOrHash);
+
+  const ev = hash.match(/EV\d{8,}/i);
+  if (ev) return ev[0];
+
+  const e = hash.match(/\/(E\d{6,})\b/i) || hash.match(/\b(E\d{6,})\b/i);
+  if (e) return e[1];
+
+  return null;
+}
+
+function isBet365MatchUrl(url) {
+  if (!BET365_HOST_RE.test(url || "")) return false;
+  const hash = String(url).split("#")[1] || "";
+  if (!hash) return false;
+  if (BET365_IP_EVENT_RE.test(`#${hash}`)) return true;
+  if (BET365_AC_EVENT_RE.test(hash)) return true;
+  if (/EV\d{8,}/i.test(hash)) return true;
+  return false;
+}
+
+function isBet365LiveUrl(url) {
+  if (!BET365_HOST_RE.test(url || "")) return false;
+  const hash = String(url).split("#")[1] || "";
+  if (!hash) return false;
+  return BET365_IP_EVENT_RE.test(`#${hash}`) || /EV\d{8,}/i.test(hash);
+}
+
+function isBet365PreMatchUrl(url) {
+  return isBet365MatchUrl(url) && !isBet365LiveUrl(url);
+}
+
+function bet365UrlHint(url) {
+  if (!BET365_HOST_RE.test(url || "")) {
+    return "Abra o site bet365.bet.br";
+  }
+  if (isBet365MatchUrl(url)) return null;
+  return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
+}
+
+const VERSION = "3.10.3";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento)/i;
@@ -515,6 +566,16 @@ function normalize(t) {
 
 function isNum(v) {
   return v && /^[\d.,/%-]+$/.test(v);
+}
+
+function isLikelyStatValue(v) {
+  if (!v) return false;
+  const s = String(v).trim();
+  if (/^\d+\/\d+$/.test(s)) return true;
+  if (/^\d{1,3}%$/.test(s)) return true;
+  if (/^\d{1,2}$/.test(s)) return true;
+  if (/^\d\.\d{1,2}$/.test(s)) return true;
+  return false;
 }
 
 function toFlatBet365Text(text) {
@@ -770,6 +831,34 @@ function mergeMatchCandidates(...args) {
   return sanitizeMatchClock(pickBestMatch(args.filter(Boolean), options), options.extractedAt);
 }
 
+function filterMatchCandidatesForPage(candidates, pageUrl) {
+  if (!isBet365PreMatchUrl(pageUrl)) return candidates || [];
+  return [];
+}
+
+function stripPreMatchScore(match, pageUrl) {
+  if (!isBet365PreMatchUrl(pageUrl) || !match) return match;
+  return {
+    ...match,
+    score: null,
+    scoreHome: null,
+    scoreAway: null,
+    clock: null,
+    status: null,
+    preMatch: true,
+  };
+}
+
+function resolveMatchForPage(candidates, options = {}) {
+  const { extractedAt, pageUrl } = options;
+  const filtered = filterMatchCandidatesForPage(candidates, pageUrl);
+  const merged = sanitizeMatchClock(pickBestMatch(filtered, { extractedAt }), extractedAt);
+  if (isBet365PreMatchUrl(pageUrl)) {
+    return stripPreMatchScore(merged, pageUrl) ?? { score: null, clock: null, preMatch: true };
+  }
+  return merged;
+}
+
 function parseGluedMatch(text) {
   const best = pickBestMatch(collectGluedMatches(text));
   if (best) return best;
@@ -812,7 +901,7 @@ function extractStatsFromVisibleText(text) {
       if (lines[i] !== label && !lines[i].includes(label)) continue;
       const home = lines[i + 1];
       const away = lines[i + 2];
-      if (isNum(home) && isNum(away)) {
+      if (isNum(home) && isNum(away) && isLikelyStatValue(home) && isLikelyStatValue(away)) {
         const key = `${label}|${home}|${away}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -1210,6 +1299,13 @@ function assessMatchConfidence(match, meta = {}) {
   const warnings = [];
   let confidence = "high";
 
+  if (meta.preMatch || match?.preMatch) {
+    return {
+      confidence: "n/a",
+      warnings: ["Página pré-jogo — placar indisponível"],
+    };
+  }
+
   if (!match?.score) {
     warnings.push("Placar não encontrado");
     confidence = "low";
@@ -1431,14 +1527,16 @@ function buildExtractionDebug({
   };
 }
 
-function finalizeMatchData(match, visibleText, meta, extractedAt) {
+function finalizeMatchData(match, visibleText, meta, extractedAt, pageUrl) {
+  const preMatch = isBet365PreMatchUrl(pageUrl);
   const enriched = enrichMatchFromHeader(visibleText, {
-    ...match,
+    ...stripPreMatchScore(match, pageUrl),
     extractedAt,
   });
   const confidence = assessMatchConfidence(enriched, {
     ...meta,
     statsCount: meta.statsCount ?? 0,
+    preMatch,
   });
 
   return {
@@ -1448,8 +1546,16 @@ function finalizeMatchData(match, visibleText, meta, extractedAt) {
   };
 }
 
-function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt) {
-  const finalized = finalizeMatchData(match, visibleText, meta, extractedAt);
+function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt, pageUrl) {
+  const finalized = finalizeMatchData(match, visibleText, meta, extractedAt, pageUrl);
+  if (isBet365PreMatchUrl(pageUrl)) {
+    const analysis = analyzeMarketScore(odds, finalized);
+    return {
+      match: finalized,
+      inference: { match: finalized, analysis, applied: false },
+      analysis,
+    };
+  }
   const inference = applyMarketScoreInference(finalized, odds);
   let result = inference.match;
 
@@ -2015,7 +2121,11 @@ function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt) {
     });
     stepAt = Date.now();
 
-    const matchBase = mergeMatchCandidates(...matchCandidates, { extractedAt }) || {};
+    const matchBase =
+      resolveMatchForPage(matchCandidates, {
+        extractedAt,
+        pageUrl: location.href,
+      }) || {};
     pipeline.push({
       step: "mergeMatch",
       detail: matchBase.score ? `${matchBase.score} (${matchBase.source})` : "none",
@@ -2048,7 +2158,8 @@ function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt) {
       odds,
       visibleText,
       meta,
-      extractedAt
+      extractedAt,
+      location.href
     );
     pipeline.push({
       step: "marketInference",
