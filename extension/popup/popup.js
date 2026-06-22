@@ -53,7 +53,7 @@ function renderPreview(data) {
 }
 
 async function extractFromTab(tabId) {
-  return chrome.tabs.sendMessage(tabId, { type: "EXTRACT" });
+  return chrome.runtime.sendMessage({ type: "EXTRACT_TAB", tabId });
 }
 
 async function createZipBlob(data) {
@@ -93,12 +93,7 @@ btnExtract.addEventListener("click", async () => {
     const hint = urlHint(tab.url);
     if (hint) throw new Error(hint);
 
-    let response;
-    try {
-      response = await extractFromTab(tab.id);
-    } catch {
-      throw new Error("Recarregue a página Bet365 e tente de novo");
-    }
+    const response = await extractFromTab(tab.id);
 
     if (!response?.ok) {
       throw new Error(response?.error || "Falha na extração");
@@ -109,8 +104,13 @@ btnExtract.addEventListener("click", async () => {
     const hasStats = data.stats?.length > 0;
     const hasScore = Boolean(data.match?.score);
 
-    if (!hasStats && !hasScore) {
-      setStatus("Extração vazia — abra o jogo e clique em Estat.", "err");
+    const hasOdds = data.odds?.length > 0;
+    const hasTeams = Boolean(data.match?.homeTeam && data.match?.awayTeam);
+
+    if (!hasStats && !hasScore && !hasOdds && !hasTeams) {
+      setStatus("Extração vazia — recarregue a página (F5) e tente de novo", "err");
+    } else if (!hasStats && !hasScore) {
+      setStatus("Gerando ZIP (pré-jogo: odds sem placar/stats)...", "ok");
     } else if (!hasScore || confidence === "low") {
       setStatus("ZIP gerado — confira placar/relógio no preview", "err");
     } else if (confidence === "medium") {
@@ -125,7 +125,7 @@ btnExtract.addEventListener("click", async () => {
     const filename = buildZipFilename(data);
     await downloadBlob(blob, filename);
 
-    if (hasStats && hasScore && confidence === "high") {
+    if (hasOdds || hasStats || hasScore) {
       setStatus(`ZIP baixado: ${filename}`, "ok");
     }
   } catch (err) {

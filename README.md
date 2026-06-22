@@ -2,7 +2,7 @@
 
 Extensão Chrome e scripts de console para extrair **placar, relógio, estatísticas e odds** de jogos na Bet365, com exportação em ZIP para diagnóstico.
 
-**Versão atual:** 3.10.1
+**Versão atual:** 3.10.2
 
 ## O que extrai
 

@@ -2,6 +2,9 @@
 (function bet365ExtensionContent() {
   "use strict";
 
+  if (window.__bet365ExtractorReady) return;
+  window.__bet365ExtractorReady = true;
+
   /* __PARSERS__ */
 
   /* __NETWORK__ */

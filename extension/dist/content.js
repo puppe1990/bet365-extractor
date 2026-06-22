@@ -2,6 +2,9 @@
 (function bet365ExtensionContent() {
   "use strict";
 
+  if (window.__bet365ExtractorReady) return;
+  window.__bet365ExtractorReady = true;
+
   function parseNextGoalMarkets(odds) {
   const markets = [];
 
@@ -468,7 +471,7 @@ function matchCandidatesFromNetworkText(text, source = "net-text") {
   return candidates;
 }
 
-const VERSION = "3.10.1";
+const VERSION = "3.10.2";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento)/i;
