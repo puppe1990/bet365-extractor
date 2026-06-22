@@ -24,7 +24,8 @@
   /* __FRAMES__ */
 
   const C = {
-    title: "color:#FFD700;font-weight:bold;font-size:14px;background:#1a1a1a;padding:2px 6px;border-radius:3px",
+    title:
+      "color:#FFD700;font-weight:bold;font-size:14px;background:#1a1a1a;padding:2px 6px;border-radius:3px",
     section: "color:#00E5FF;font-weight:bold;font-size:12px",
     key: "color:#A0AEC0",
     value: "color:#FFFFFF;font-weight:bold",
@@ -81,7 +82,9 @@
       seen.add(node);
       if (node.querySelectorAll) roots.push(node);
       node.querySelectorAll?.("iframe").forEach((f) => {
-        try { if (f.contentDocument) walk(f.contentDocument, d + 1); } catch (_) {}
+        try {
+          if (f.contentDocument) walk(f.contentDocument, d + 1);
+        } catch (_) {}
       });
       node.querySelectorAll?.("*").forEach((el) => {
         if (el.shadowRoot) walk(el.shadowRoot, d + 1);
@@ -96,7 +99,10 @@
     const seen = new Set();
     getAllRoots().forEach((r) => {
       r.querySelectorAll(sel).forEach((el) => {
-        if (!seen.has(el)) { seen.add(el); out.push(el); }
+        if (!seen.has(el)) {
+          seen.add(el);
+          out.push(el);
+        }
       });
     });
     return out;
@@ -105,7 +111,10 @@
   function clickStatsTab() {
     for (const tab of queryDeep("[class*='LocationEventsMenu_Item'], [class*='EventsMenu'] *")) {
       const t = normalize(tab.textContent);
-      if (/^Estat\.?$/i.test(t)) { tab.click(); return true; }
+      if (/^Estat\.?$/i.test(t)) {
+        tab.click();
+        return true;
+      }
     }
     return false;
   }
@@ -146,7 +155,8 @@
     const odds = [];
     const seen = new Set();
 
-    const marketSels = "[class*='MarketGroup'], [class*='HorizontalMarket'], [class*='Market_Column']";
+    const marketSels =
+      "[class*='MarketGroup'], [class*='HorizontalMarket'], [class*='Market_Column']";
 
     queryDeep(marketSels).forEach((group) => {
       const market = normalize(
@@ -171,9 +181,8 @@
 
           if (!isValidSelection(selection) || !isValidOdd(odd)) return;
 
-          const fullSelection = handicap && isLineValue(handicap)
-            ? `${selection} (${handicap})`
-            : selection;
+          const fullSelection =
+            handicap && isLineValue(handicap) ? `${selection} (${handicap})` : selection;
 
           const key = `${market}|${fullSelection}|${odd}`;
           if (seen.has(key)) return;
@@ -300,7 +309,11 @@
       extractedAt,
       extraCandidates: [frameMatch, domMatch, fromNet.match].filter(Boolean),
     });
-    pipeline.push({ step: "matchCandidates", count: matchCandidates.length, ms: Date.now() - stepAt });
+    pipeline.push({
+      step: "matchCandidates",
+      count: matchCandidates.length,
+      ms: Date.now() - stepAt,
+    });
     stepAt = Date.now();
 
     const matchBase =
@@ -400,20 +413,31 @@
     ta.focus();
     ta.select();
     let ok = false;
-    try { ok = document.execCommand("copy"); } catch (_) {}
+    try {
+      ok = document.execCommand("copy");
+    } catch (_) {}
     document.body.removeChild(ta);
     if (ok) return { ok: true, text };
-    return { ok: false, text, hint: "Clique na página Bet365 (fora do DevTools) e rode copyBet365Data() de novo" };
+    return {
+      ok: false,
+      text,
+      hint: "Clique na página Bet365 (fora do DevTools) e rode copyBet365Data() de novo",
+    };
   }
 
   function printData(data) {
     console.log(`%c⚽ Bet365 Extractor v${VERSION}`, C.title);
     console.log("%c▸ PARTIDA", C.section, data.match);
     console.log("%c▸ ESTATÍSTICAS", C.section);
-    data.stats.length ? console.table(data.stats) : console.log("%c  vazio — veja meta.tips", C.warn);
+    data.stats.length
+      ? console.table(data.stats)
+      : console.log("%c  vazio — veja meta.tips", C.warn);
     console.log("%c▸ ODDS", C.section);
-    data.odds.length ? console.table(data.odds) : console.log("%c  vazio — role até os mercados", C.warn);
-    if (!data.stats.length) console.log("%c▸ DICA: meta.visibleTextSample", C.dim, data.meta.visibleTextSample);
+    data.odds.length
+      ? console.table(data.odds)
+      : console.log("%c  vazio — role até os mercados", C.warn);
+    if (!data.stats.length)
+      console.log("%c▸ DICA: meta.visibleTextSample", C.dim, data.meta.visibleTextSample);
     console.log("%c▸ JSON", C.section);
     console.log("%c" + JSON.stringify(data, null, 2), C.json);
   }
@@ -467,8 +491,6 @@
     return networkLog;
   };
 
-
-
   function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
     const blob = new Blob([text], { type: mime });
     const a = document.createElement("a");
@@ -477,8 +499,6 @@
     a.click();
     URL.revokeObjectURL(a.href);
   }
-
-
 
   window.copyBet365Data = function (pretty = true) {
     const text = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);

@@ -59,9 +59,18 @@ describe("bet365 market category tabs", () => {
   });
 
   it("relaxa faixa vertical das abas", () => {
-    assert.equal(isInMarketTabBand({ top: 350, left: 120, width: 60, height: 24 }, 900, 1200), true);
-    assert.equal(isInMarketTabBand({ top: 420, left: 120, width: 60, height: 24 }, 900, 1200), false);
-    assert.equal(isInMarketTabBand({ top: 450, left: 120, width: 60, height: 24 }, 1200, 1400), true);
+    assert.equal(
+      isInMarketTabBand({ top: 350, left: 120, width: 60, height: 24 }, 900, 1200),
+      true
+    );
+    assert.equal(
+      isInMarketTabBand({ top: 420, left: 120, width: 60, height: 24 }, 900, 1200),
+      false
+    );
+    assert.equal(
+      isInMarketTabBand({ top: 450, left: 120, width: 60, height: 24 }, 1200, 1400),
+      true
+    );
   });
 
   it("escolhe candidato com menor área por rótulo", () => {

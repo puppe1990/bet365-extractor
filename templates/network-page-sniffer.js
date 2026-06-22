@@ -35,8 +35,7 @@
   const LINEUP_UI_BLOCK_RE =
     /Informa|Configura|Idioma|Ajuda|Dep[oó]sito|Promo|Resultados|Not[ií]cias|Empregos|Parceiros|bet365|Facebook|Instagram|Logo|Servidor|reCAPTCHA|Regras|Promoções|Áudio|Futebol|Estatísticas|Esportes|Sites|Jogue com|Todos os|Ao-Vivo|Minhas Apostas|Cassino|Popular|Criar Aposta|Instantâneas|Intervalo|Marcadores|Tabela|Cronologia|Escalação/i;
   const LINEUP_PLAYER_SHORT_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;
-  const LINEUP_PLAYER_FULL_RE =
-    /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;
+  const LINEUP_PLAYER_FULL_RE = /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;
 
   function isLineupPlayerName(name) {
     if (!name || name.length > 40) return false;

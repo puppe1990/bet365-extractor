@@ -1,10 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import {
-  buildZipEntries,
-  buildZipFilename,
-  sanitizeDownloadFilename,
-} from "../lib/bet365-zip.js";
+import { buildZipEntries, buildZipFilename, sanitizeDownloadFilename } from "../lib/bet365-zip.js";
 import { formatBet365DebugLogs, formatBet365TraceLogs } from "../lib/bet365-format.js";
 
 const SAMPLE = {
@@ -97,19 +93,13 @@ describe("formatBet365TraceLogs", () => {
 describe("buildZipFilename", () => {
   it("gera nome campeonato-jogo-placar-timestamp.zip", () => {
     const name = buildZipFilename(SAMPLE, "2026-06-21T23:30:00.000Z");
-    assert.equal(
-      name,
-      "copa-do-mundo-2026-uruguai-cabo-verde-2-2-2026-06-21_23-30-00.zip"
-    );
+    assert.equal(name, "copa-do-mundo-2026-uruguai-cabo-verde-2-2-2026-06-21_23-30-00.zip");
   });
 });
 
 describe("sanitizeDownloadFilename", () => {
   it("remove caracteres inválidos para chrome.downloads", () => {
-    const safe = sanitizeDownloadFilename(
-      "copa/jogo:test.zip",
-      "fallback.zip"
-    );
+    const safe = sanitizeDownloadFilename("copa/jogo:test.zip", "fallback.zip");
     assert.equal(safe, "copa-jogo-test.zip");
   });
 });

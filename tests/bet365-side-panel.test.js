@@ -25,8 +25,7 @@ import {
 } from "../lib/bet365-side-panel.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const readFixture = (name) =>
-  readFileSync(join(__dir, "fixtures", name), "utf8");
+const readFixture = (name) => readFileSync(join(__dir, "fixtures", name), "utf8");
 
 describe("parseTimelineFromText", () => {
   it("extrai gols, escanteios e impedimentos", () => {
@@ -50,7 +49,9 @@ describe("parseTimelineFromText", () => {
 
     assert.ok(events.length <= 8);
     assert.ok(events.length >= 5);
-    assert.ok(events.every((e) => !/Lionel Messi|Lautaro Martinez|Kevin Danso/.test(e.description)));
+    assert.ok(
+      events.every((e) => !/Lionel Messi|Lautaro Martinez|Kevin Danso/.test(e.description))
+    );
     assert.ok(events.every((e) => !/\d+\.\d{2}/.test(e.description)));
 
     const goal = events.find((e) => e.minute === 41);
@@ -84,9 +85,7 @@ function awayHas(lineup, name) {
 
 describe("parsePlayerFinalizationsFromText", () => {
   it("extrai finalizações por jogador", () => {
-    const rows = parsePlayerFinalizationsFromText(
-      readFixture("side-panel-player-finals.txt")
-    );
+    const rows = parsePlayerFinalizationsFromText(readFixture("side-panel-player-finals.txt"));
 
     assert.equal(rows.length, 3);
     assert.deepEqual(rows[0], {
@@ -283,7 +282,11 @@ describe("collectZapWireText", () => {
   it("agrega mensagens zap do network log", () => {
     const wire = readFixture("zap-lineup-wire.txt");
     const merged = collectZapWireText([
-      { url: "ws:wss://www.bet365.bet.br/sportspublisher/zap", kind: "ws", data: wire.slice(0, 200) },
+      {
+        url: "ws:wss://www.bet365.bet.br/sportspublisher/zap",
+        kind: "ws",
+        data: wire.slice(0, 200),
+      },
       { url: "ws:wss://www.bet365.bet.br/sportspublisher/zap", kind: "ws", data: wire.slice(200) },
       { url: "/offersapi/inplayoffers/", kind: "xhr", data: "F|MA;ID=1" },
     ]);
@@ -377,7 +380,12 @@ describe("mergeSidePanel", () => {
   it("une timeline visível com rede sem duplicar", () => {
     const merged = mergeSidePanel(
       { timeline: [{ minute: 39, description: "Gol", type: "goal" }] },
-      { timeline: [{ minute: 39, description: "Gol", type: "goal" }, { minute: 29, description: "Escanteio", type: "corner" }] }
+      {
+        timeline: [
+          { minute: 39, description: "Gol", type: "goal" },
+          { minute: 29, description: "Escanteio", type: "corner" },
+        ],
+      }
     );
 
     assert.equal(merged.timeline.length, 2);
@@ -392,7 +400,9 @@ describe("mergeSidePanel", () => {
           away: { starters: ["A Schlager"], subs: [], goals: [] },
           source: "network-blob",
         },
-        playerFinalizations: [{ player: "L Messi", shots: "3", onTarget: "1", source: "network-blob" }],
+        playerFinalizations: [
+          { player: "L Messi", shots: "3", onTarget: "1", source: "network-blob" },
+        ],
       }
     );
 

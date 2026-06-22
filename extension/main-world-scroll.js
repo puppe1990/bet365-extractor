@@ -129,7 +129,10 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     const s = norm(text);
     if (!s) return 0;
     return MARKET_CATEGORY_TABS.filter((label) =>
-      new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, (ch) => `\\${ch}`), "i").test(s)
+      new RegExp(
+        label.replace(/[.*+?^${}()|[\]\\]/g, (ch) => `\\${ch}`),
+        "i"
+      ).test(s)
     ).length;
   }
 
@@ -192,9 +195,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
       el.dispatchEvent(
         new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window })
       );
-      el.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
-      );
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
     } catch (_) {}
     try {
       el.click();
@@ -291,10 +292,9 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     }
 
     const scrollRoots = [];
-    [
-      "[class*='EventViewDetailScroller']",
-      "[class*='MarketGroups']",
-    ].forEach((sel) => queryDeep(sel).forEach((el) => scrollRoots.push(el)));
+    ["[class*='EventViewDetailScroller']", "[class*='MarketGroups']"].forEach((sel) =>
+      queryDeep(sel).forEach((el) => scrollRoots.push(el))
+    );
 
     for (const root of [...new Set(scrollRoots)].slice(0, 1)) {
       const el = collectTargets(root)[0];

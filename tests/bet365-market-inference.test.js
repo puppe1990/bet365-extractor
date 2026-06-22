@@ -50,10 +50,7 @@ describe("applyMarketScoreInference", () => {
   });
 
   it("infere 2-2 quando placar ausente mas mercados implicam empate", () => {
-    const result = applyMarketScoreInference(
-      { scoreConfidence: "low", clock: null },
-      LIVE_ODDS
-    );
+    const result = applyMarketScoreInference({ scoreConfidence: "low", clock: null }, LIVE_ODDS);
 
     assert.equal(result.applied, true);
     assert.equal(result.match.score, "2-2");

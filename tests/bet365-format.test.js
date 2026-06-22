@@ -54,10 +54,7 @@ describe("buildBet365Filename", () => {
   it("monta campeonato-jogo-placar-timestamp", () => {
     const name = buildBet365Filename(SAMPLE, "json", "2026-06-21T23:30:00.000Z");
 
-    assert.equal(
-      name,
-      "copa-do-mundo-2026-uruguai-cabo-verde-2-1-2026-06-21_23-30-00.json"
-    );
+    assert.equal(name, "copa-do-mundo-2026-uruguai-cabo-verde-2-1-2026-06-21_23-30-00.json");
   });
 
   it("usa fallback quando faltam campeonato ou placar", () => {

@@ -42,18 +42,9 @@ import {
 } from "../lib/bet365-parsers.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const FIXTURE = readFileSync(
-  join(__dir, "fixtures/uruguay-cabo-verde-glued.txt"),
-  "utf8"
-);
-const INPLAY_ODDS_FIXTURE = readFileSync(
-  join(__dir, "fixtures/inplay-odds-visible.txt"),
-  "utf8"
-);
-const INPLAY_NOISE_FIXTURE = readFileSync(
-  join(__dir, "fixtures/inplay-noise-visible.txt"),
-  "utf8"
-);
+const FIXTURE = readFileSync(join(__dir, "fixtures/uruguay-cabo-verde-glued.txt"), "utf8");
+const INPLAY_ODDS_FIXTURE = readFileSync(join(__dir, "fixtures/inplay-odds-visible.txt"), "utf8");
+const INPLAY_NOISE_FIXTURE = readFileSync(join(__dir, "fixtures/inplay-noise-visible.txt"), "utf8");
 const PLAYER_GRIDS_FIXTURE = readFileSync(
   join(__dir, "fixtures/argentina-austria-player-grids.txt"),
   "utf8"
@@ -97,18 +88,14 @@ describe("parseGluedStats", () => {
   });
 
   it("não confunde 4 e 13 em Ataques Perigosos colados", () => {
-    const stats = parseGluedStats(
-      "Ataques1519Ataques Perigosos413% de Posse5050Finalizações"
-    );
+    const stats = parseGluedStats("Ataques1519Ataques Perigosos413% de Posse5050Finalizações");
     const row = stats.find((s) => s.label === "Ataques Perigosos");
     assert.equal(row?.home, "4");
     assert.equal(row?.away, "13");
   });
 
   it("separa 17 e 27 em Ataques Perigosos colados", () => {
-    const stats = parseGluedStats(
-      "Ataques1725Ataques Perigosos1727% de Posse4852Finalizações"
-    );
+    const stats = parseGluedStats("Ataques1725Ataques Perigosos1727% de Posse4852Finalizações");
     const row = stats.find((s) => s.label === "Ataques Perigosos");
     assert.equal(row?.home, "17");
     assert.equal(row?.away, "27");
@@ -245,9 +232,7 @@ describe("collectSpacedScoreboardMatches", () => {
 
 describe("collectGluedMatches", () => {
   it("encontra múltiplos placares colados na página", () => {
-    const matches = collectGluedMatches(
-      "Uruguai21Cabo Verde45:00 Uruguai22Cabo Verde72:14"
-    );
+    const matches = collectGluedMatches("Uruguai21Cabo Verde45:00 Uruguai22Cabo Verde72:14");
 
     assert.equal(matches.length, 2);
     assert.equal(pickBestMatch(matches).score, "2-2");
@@ -264,10 +249,7 @@ describe("parseMatchFromLines", () => {
 
   it("ignora horário de parede quando há minuto de jogo", () => {
     const extractedAt = "2026-06-21T23:42:05.176Z";
-    const match = parseMatchFromLines(
-      "Uruguai\n2\n-\n2\nCabo Verde\n72:14\n20:42",
-      extractedAt
-    );
+    const match = parseMatchFromLines("Uruguai\n2\n-\n2\nCabo Verde\n72:14\n20:42", extractedAt);
 
     assert.equal(match.score, "2-2");
     assert.equal(match.clock, "72:14");
@@ -420,9 +402,7 @@ describe("parseOddsFromVisibleText", () => {
 
   it("associa mercados e linhas de gols do texto visível ao vivo", () => {
     const odds = parseOddsFromVisibleText(INPLAY_ODDS_FIXTURE);
-    const byKey = Object.fromEntries(
-      odds.map((o) => [`${o.market}|${o.selection}`, o])
-    );
+    const byKey = Object.fromEntries(odds.map((o) => [`${o.market}|${o.selection}`, o]));
 
     assert.equal(byKey["Resultado Final|Time Casa"].odds, 1.5);
     assert.equal(byKey["Resultado Final|Empate"].odds, 4);
@@ -474,14 +454,8 @@ describe("team and player junk filters", () => {
   });
 
   it("rejeita linhas Mais/Menos em mercados de jogador", () => {
-    assert.equal(
-      isJunkPlayerPropSelection("Jogador - Assistências", "Menos de 5.50"),
-      true
-    );
-    assert.equal(
-      isJunkPlayerPropSelection("Jogador - Assistências", "Lionel Messi - 1+"),
-      false
-    );
+    assert.equal(isJunkPlayerPropSelection("Jogador - Assistências", "Menos de 5.50"), true);
+    assert.equal(isJunkPlayerPropSelection("Jogador - Assistências", "Lionel Messi - 1+"), false);
   });
 });
 
@@ -537,9 +511,7 @@ describe("isJunkOddsSelection", () => {
 describe("parseOddsFromVisibleText noise filtering", () => {
   it("parseia grades de gols e ignora ruído de footer, stats e outros jogos", () => {
     const odds = parseOddsFromVisibleText(INPLAY_NOISE_FIXTURE);
-    const byKey = Object.fromEntries(
-      odds.map((o) => [`${o.market}|${o.selection}`, o])
-    );
+    const byKey = Object.fromEntries(odds.map((o) => [`${o.market}|${o.selection}`, o]));
 
     assert.equal(byKey["Partida - Gols - Mais Opções|Mais de 0.5"].odds, 1.083);
     assert.equal(byKey["Partida - Gols - Mais Opções|Menos de 5.5"].odds, 1.02);
@@ -559,9 +531,7 @@ describe("parseOddsFromVisibleText noise filtering", () => {
 
   it("parseia grades de jogador e filtra ruído em Time - Gols", () => {
     const odds = parseOddsFromVisibleText(`${PLAYER_GRIDS_FIXTURE}\n${TEAM_GOALS_FIXTURE}`);
-    const byKey = Object.fromEntries(
-      odds.map((o) => [`${o.market}|${o.selection}`, o])
-    );
+    const byKey = Object.fromEntries(odds.map((o) => [`${o.market}|${o.selection}`, o]));
 
     assert.equal(byKey["Jogador - Assistências|Lionel Messi - 1+"].odds, 4.33);
     assert.equal(byKey["Jogador - Assistências|Rodrigo De Paul - 1+"].odds, 4.5);
@@ -576,9 +546,7 @@ describe("parseOddsFromVisibleText noise filtering", () => {
     assert.ok(!odds.some((o) => o.market === "Áustria - Gols" && o.selection === "Áustria"));
     assert.ok(!odds.some((o) => o.market === "Áustria - Gols" && o.selection === "M Gregoritsch"));
     assert.ok(
-      !odds.some(
-        (o) => o.market === "Jogador - Assistências" && /^Menos de /.test(o.selection)
-      )
+      !odds.some((o) => o.market === "Jogador - Assistências" && /^Menos de /.test(o.selection))
     );
   });
 
@@ -630,9 +598,9 @@ describe("mergeOdds", () => {
   });
 
   it("usa visible-text como fallback quando não há DOM", () => {
-    const merged = mergeOdds(
-      [{ market: "Resultado Final", selection: "Uruguai", odds: 1.071, source: "visible-text" }]
-    );
+    const merged = mergeOdds([
+      { market: "Resultado Final", selection: "Uruguai", odds: 1.071, source: "visible-text" },
+    ]);
 
     assert.equal(merged.length, 1);
     assert.equal(merged[0].source, "visible-text");
@@ -736,10 +704,7 @@ describe("cleanOdds", () => {
 
     assert.equal(cleaned.length, 2);
     assert.ok(cleaned.every((o) => o.market === "Resultado Final"));
-    assert.deepEqual(
-      cleaned.map((o) => o.selection).sort(),
-      ["Empate", "Uruguai"]
-    );
+    assert.deepEqual(cleaned.map((o) => o.selection).sort(), ["Empate", "Uruguai"]);
   });
 });
 
@@ -759,9 +724,8 @@ describe("odds validators", () => {
 
 describe("extraction debug helpers", () => {
   it("rankeia candidatos e monta debug enriquecido", async () => {
-    const { annotateCandidateRanks, buildExtractionDebug } = await import(
-      "../lib/bet365-parsers.js"
-    );
+    const { annotateCandidateRanks, buildExtractionDebug } =
+      await import("../lib/bet365-parsers.js");
     const extractedAt = "2026-06-21T23:30:00.000Z";
     const candidates = [
       { score: "2-1", clock: "20:42", source: "visible-glued" },

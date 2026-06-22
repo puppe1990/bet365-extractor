@@ -58,7 +58,9 @@ async function extractFromTab(tabId) {
   } catch (err) {
     const msg = String(err?.message || err);
     if (/receiving end does not exist/i.test(msg)) {
-      throw new Error("Extensão não conectou — recarregue em chrome://extensions e dê F5 na Bet365");
+      throw new Error(
+        "Extensão não conectou — recarregue em chrome://extensions e dê F5 na Bet365"
+      );
     }
     throw err;
   }
@@ -122,9 +124,7 @@ btnExtract.addEventListener("click", async () => {
         setTimeout(
           () =>
             reject(
-              new Error(
-                "Extração demorou demais (>45s) — recarregue a extensão e tente de novo"
-              )
+              new Error("Extração demorou demais (>45s) — recarregue a extensão e tente de novo")
             ),
           45_000
         );

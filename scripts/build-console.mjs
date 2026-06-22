@@ -34,7 +34,10 @@ const output = shell
     "/* __PARSERS__ */",
     `${marketInference}\n\n${protocolDecode}\n\n${networkParse}\n\n${urlHelpers}\n\n${parsers}\n\n${format}`
   )
-  .replace("/* __NETWORK__ */", network.replace("/* __INSTALL_SNIFFER__ */", "installNetworkSniffer();"))
+  .replace(
+    "/* __NETWORK__ */",
+    network.replace("/* __INSTALL_SNIFFER__ */", "installNetworkSniffer();")
+  )
   .replace("/* __FRAMES__ */", frames);
 
 writeFileSync(join(root, "bet365-console-extractor.js"), output);

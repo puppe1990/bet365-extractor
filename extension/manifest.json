@@ -4,11 +4,7 @@
   "description": "Extrai match, stats e odds da Bet365 e baixa em ZIP",
   "version": "3.10.5",
   "permissions": ["activeTab", "downloads", "scripting"],
-  "host_permissions": [
-    "*://*.bet365.bet.br/*",
-    "*://*.bet365.com/*",
-    "*://*.bet365.bet/*"
-  ],
+  "host_permissions": ["*://*.bet365.bet.br/*", "*://*.bet365.com/*", "*://*.bet365.bet/*"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -19,11 +15,7 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "*://*.bet365.bet.br/*",
-        "*://*.bet365.com/*",
-        "*://*.bet365.bet/*"
-      ],
+      "matches": ["*://*.bet365.bet.br/*", "*://*.bet365.com/*", "*://*.bet365.bet/*"],
       "js": ["dist/content.js"],
       "run_at": "document_start",
       "all_frames": true

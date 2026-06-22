@@ -9,8 +9,7 @@ import {
 } from "../lib/bet365-protocol-decode.js";
 import { extractFromNetworkLog } from "../lib/bet365-parsers.js";
 
-const WS_TIME =
-  "\u0014__time\u0001F|IN|TI=20260622005943869|UF=55";
+const WS_TIME = "\u0014__time\u0001F|IN|TI=20260622005943869|UF=55";
 const WS_SCORE = "OV|SC=2-2|TU=94:10|S1=2|S2=2|NA=Uruguai|N2=Cabo Verde";
 const BLOB_SNIPPET =
   "(function(){var x='live';return {SC:'2-2',TU:'94:10',EV:'EV151352326532'};})();" +

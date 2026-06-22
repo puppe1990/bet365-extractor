@@ -36,9 +36,7 @@ function scoreTotalFromMatch(match) {
 function isDrawFavored(odds) {
   const rf = (odds || []).filter((o) => /resultado\s*final/i.test(o.market));
   const empate = rf.find((o) => /^empate$/i.test(String(o.selection || "").trim()));
-  const home = rf.find(
-    (o) => o !== empate && !/empate/i.test(String(o.selection || ""))
-  );
+  const home = rf.find((o) => o !== empate && !/empate/i.test(String(o.selection || "")));
 
   if (!empate) return false;
 
@@ -88,8 +86,7 @@ function analyzeMarketScore(odds, match) {
     minTotalGoals,
     domTotalGoals,
     drawFavored,
-    consistent:
-      domTotalGoals == null || minTotalGoals == null || domTotalGoals >= minTotalGoals,
+    consistent: domTotalGoals == null || minTotalGoals == null || domTotalGoals >= minTotalGoals,
     reasons: [],
   };
 
@@ -445,9 +442,7 @@ function extractScoresFromNetworkText(text) {
         score: `${home}-${away}`,
         scoreHome: home,
         scoreAway: away,
-        clock: extractClockFromNetworkText(
-          text.slice(Math.max(0, m.index - 80), m.index + 120)
-        ),
+        clock: extractClockFromNetworkText(text.slice(Math.max(0, m.index - 80), m.index + 120)),
       });
     }
   }
@@ -533,8 +528,7 @@ const SKIP_ODDS_LINES =
 const JUNK_ODDS_MARKETS =
   /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas)/i;
 
-const TIMELINE_LEAK_MARKET_RE =
-  /^\d+°\s*(?:Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
+const TIMELINE_LEAK_MARKET_RE = /^\d+°\s*(?:Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
 
 const TIMELINE_LEAK_SELECTION_RE = /\s-\s(?:Chute|Assist)$/i;
 
@@ -919,9 +913,7 @@ function parseGluedMatch(text) {
 }
 
 function enrichMatchFromHeader(text, match = {}) {
-  const vs = text.match(
-    /([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})\s+v\s+([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})/
-  );
+  const vs = text.match(/([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})\s+v\s+([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})/);
   const competition = text.match(
     /(Copa do Mundo \d{4}|Champions League|Premier League|La Liga|Serie A|Bundesliga|Ligue 1)/i
   )?.[0];
@@ -941,8 +933,7 @@ function linesFromText(text) {
     .filter(Boolean);
 }
 
-const MARKET_LINE_RE =
-  /^(Mais de|Menos de|Jogador|Criar Aposta|Resultado Final|Ver$|Craques)/i;
+const MARKET_LINE_RE = /^(Mais de|Menos de|Jogador|Criar Aposta|Resultado Final|Ver$|Craques)/i;
 
 function extractStatsFromVisibleText(text, pageUrl) {
   const glued = parseGluedStats(text);
@@ -973,12 +964,7 @@ function extractStatsFromVisibleText(text, pageUrl) {
   return stats;
 }
 
-function collectMatchCandidatesFromText(
-  text,
-  source,
-  extractedAt,
-  maxLen = 3500
-) {
+function collectMatchCandidatesFromText(text, source, extractedAt, maxLen = 3500) {
   const candidates = [];
   if (!text || text.length > maxLen) return candidates;
 
@@ -1022,12 +1008,7 @@ function extractMatchFromFrameChunks(frames, extractedAt, options = {}) {
     if (!text) continue;
 
     const source = frame.source || "frame-scoreboard";
-    const chunkCandidates = collectMatchCandidatesFromText(
-      text,
-      source,
-      extractedAt,
-      3500
-    );
+    const chunkCandidates = collectMatchCandidatesFromText(text, source, extractedAt, 3500);
 
     if (!chunkCandidates.length) {
       if (!looksLikeScoreboardText(text, homeTeam, awayTeam)) continue;
@@ -1281,9 +1262,7 @@ function isLikelyShirtNumberPair(selection, oddRaw, lines, oddIndex) {
   if (n < 1 || n > 99) return false;
   const next = lines[oddIndex + 1];
   return Boolean(
-    next &&
-      /^[A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,}$/.test(next) &&
-      !isValidOdd(parseOdd(next))
+    next && /^[A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,}$/.test(next) && !isValidOdd(parseOdd(next))
   );
 }
 
@@ -1327,8 +1306,7 @@ function parseOddsFromVisibleText(text) {
     if (isJunkOddsSelection(selection)) return;
     if (isLikelyMinuteAsOdd(odd, mkt, selection)) return;
     if (isLikelyStatCountAsOdd(odd, mkt, selection)) return;
-    const validSelection =
-      isValidSelection(selection) || /^.+\s-\s\d{1,2}\+$/.test(selection);
+    const validSelection = isValidSelection(selection) || /^.+\s-\s\d{1,2}\+$/.test(selection);
     if (!validSelection) return;
     const key = `${mkt}|${selection}|${odd}`;
     if (seen.has(key)) return;
@@ -1389,13 +1367,7 @@ function parseOddsFromVisibleText(text) {
     }
 
     if (inPlayerGrid && playerGridColumns.length) {
-      const consumed = consumePlayerPropRow(
-        lines,
-        i,
-        playerGridColumns,
-        market,
-        pushOdd
-      );
+      const consumed = consumePlayerPropRow(lines, i, playerGridColumns, market, pushOdd);
       if (consumed != null) {
         i = consumed;
         continue;
@@ -1451,9 +1423,7 @@ function parseOddsFromVisibleText(text) {
     }
   }
 
-  const selectionOddSeen = new Set(
-    [...seen].map((key) => key.slice(key.indexOf("|") + 1))
-  );
+  const selectionOddSeen = new Set([...seen].map((key) => key.slice(key.indexOf("|") + 1)));
   const glued = /([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,28})\s+(\d+[.,]\d{1,3})\b/g;
   let m;
   while ((m = glued.exec(text)) !== null) {
@@ -1616,7 +1586,10 @@ function walkBet365Json(node, path, out) {
     }
   }
 
-  if (kl.some((k) => /odds|od|price|coef/.test(k)) && kl.some((k) => /name|na|selection|team/.test(k))) {
+  if (
+    kl.some((k) => /odds|od|price|coef/.test(k)) &&
+    kl.some((k) => /name|na|selection|team/.test(k))
+  ) {
     const selection = node.name || node.NA || node.selection || node.team;
     const odds = node.odds ?? node.OD ?? node.price ?? node.coef;
     const market = node.market || node.marketName || node.MG || "Mercado";
@@ -1759,12 +1732,7 @@ function assessMatchConfidence(match, meta = {}) {
 }
 
 function gatherMatchCandidates(options = {}) {
-  const {
-    frameChunks = [],
-    visibleText = "",
-    extractedAt,
-    extraCandidates = [],
-  } = options;
+  const { frameChunks = [], visibleText = "", extractedAt, extraCandidates = [] } = options;
   const candidates = [...extraCandidates];
 
   for (const frame of frameChunks) {
@@ -2005,9 +1973,7 @@ function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt, p
 
   if (inference.applied) {
     const warnings = [...(result.scoreWarnings || [])];
-    warnings.push(
-      `Placar inferido por mercados (mín. ${inference.analysis.minTotalGoals} gols).`
-    );
+    warnings.push(`Placar inferido por mercados (mín. ${inference.analysis.minTotalGoals} gols).`);
 
     let confidence = result.scoreConfidence;
     if (!result.clock && confidence === "high") confidence = "medium";
@@ -2021,8 +1987,6 @@ function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt, p
 
   return { match: result, inference, analysis: inference.analysis };
 }
-
-{ analyzeMarketScore, applyMarketScoreInference };
 
 const MARKET_CATEGORY_TABS = [
   "Popular",
@@ -2058,7 +2022,9 @@ const TAB_PATTERNS = MARKET_CATEGORY_TABS.map(
 );
 
 function normalizeMarketTabLabel(text) {
-  return String(text || "").replace(/\s+/g, " ").trim();
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function isMarketCategoryTabLabel(text) {
@@ -2080,20 +2046,14 @@ function marketTabTopLimit(innerHeight = 800) {
 function isInMarketTabBand(rect, innerHeight = 800, innerWidth = 1200) {
   if (!rect || rect.width < 12 || rect.height < 6) return false;
   const topLimit = marketTabTopLimit(innerHeight);
-  return (
-    rect.top >= -8 &&
-    rect.top <= topLimit &&
-    rect.left >= 0 &&
-    rect.left <= innerWidth * 0.85
-  );
+  return rect.top >= -8 && rect.top <= topLimit && rect.left >= 0 && rect.left <= innerWidth * 0.85;
 }
 
 function gluedMarketTabCount(text) {
   const s = normalizeMarketTabLabel(text);
   if (!s) return 0;
-  return MARKET_CATEGORY_TABS.filter((label) =>
-    new RegExp(escapeRegExp(label), "i").test(s)
-  ).length;
+  return MARKET_CATEGORY_TABS.filter((label) => new RegExp(escapeRegExp(label), "i").test(s))
+    .length;
 }
 
 function isGluedMarketTabContainer(text) {
@@ -2114,9 +2074,7 @@ function scoreMarketTabBarContainer(text) {
 function leafMarketTabKey(text, childTexts = []) {
   const key = marketCategoryTabKey(text);
   if (!key || isGluedMarketTabContainer(text)) return null;
-  const childKeys = childTexts
-    .map((childText) => marketCategoryTabKey(childText))
-    .filter(Boolean);
+  const childKeys = childTexts.map((childText) => marketCategoryTabKey(childText)).filter(Boolean);
   if (childKeys.includes(key)) return null;
   return key;
 }
@@ -2160,8 +2118,7 @@ const SIDE_PANEL_TAB_LABELS = {
 };
 
 const PLAYER_SHORT_NAME_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;
-const PLAYER_FULL_NAME_RE =
-  /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;
+const PLAYER_FULL_NAME_RE = /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;
 const LINEUP_STOP_RE = /^(Tabela|Cronologia|Estat\.|Estatísticas de Jogador|FINALIZA)/i;
 
 const TIMELINE_SECTION_STOP_RE = /^(Escalação|Tabela|Jogador\s*[-/]|FINALIZA(COES|ÇÕES))$/i;
@@ -2181,7 +2138,6 @@ const LINEUP_ZAP_URL_RE = /sportspublisher\/zap|zap-ws/i;
 const LINEUP_WIRE_RECORD_RE =
   /(?:\||^|;|\x14)(?:PG|PA|SL|PI|OV|EV|MG);([^|]{0,320})|(?:\||^)(PA;[^|]{0,320})/gi;
 const LINEUP_NA_RE = /\bNA=([^|;\x00-\x1f\x14]{2,40})/;
-
 
 const GOAL_LINE_RE = /^(\d{1,3})['′]?\s+(.+)$/;
 
@@ -2266,7 +2222,11 @@ function isTimelineNoiseDetail(line) {
   }
   if (/^(Encontro\s*-|N[uú]mero de|Nº\s*Escanteios|Escanteios\s*-)/i.test(s)) return true;
   if (/^Escanteios\s*\/\s*Cart[oõ]es$/i.test(s)) return true;
-  if (/^(xG|Ataques Perigosos|Ataques|% de Posse|Passes Chave|Goleiro - Defesas|Precisão dos Passes|Cruzamentos|Finalizações\s*\/\s*Chutes ao Gol)$/i.test(s)) {
+  if (
+    /^(xG|Ataques Perigosos|Ataques|% de Posse|Passes Chave|Goleiro - Defesas|Precisão dos Passes|Cruzamentos|Finalizações\s*\/\s*Chutes ao Gol)$/i.test(
+      s
+    )
+  ) {
     return true;
   }
   if (NETWORK_NAME_BLOCK_RE.test(s)) return true;
@@ -2583,8 +2543,7 @@ const TITULARES_STOP_RE =
   /^(Mostrar Mais|A Qualquer Momento|Marcadores de Gol|2°\s*Gol|Partida\s*-|Para Marcar ou Dar Assistência|Jogador\s*[-/])/i;
 const TITULARES_SKIP_RE = /^(CA|SUBSTITUIÇÃO\+?)$/i;
 
-const TITULARES_SECTION_RE =
-  /^(Jogadores Titulares|Jogador a Marcar ou Dar Assistência)$/i;
+const TITULARES_SECTION_RE = /^(Jogadores Titulares|Jogador a Marcar ou Dar Assistência)$/i;
 
 function parseLineupFromTitularesText(text) {
   const lines = linesFromText(text);
@@ -2622,7 +2581,8 @@ function parseLineupFromText(text) {
   let start = lines.findIndex((l) => /^Escalação$/i.test(l));
   if (start < 0) {
     start = lines.findIndex(
-      (l) => /\bEscalação\b/i.test(l) && !/Escalações/i.test(l) && /Cronologia|Tabela|Estat/i.test(l)
+      (l) =>
+        /\bEscalação\b/i.test(l) && !/Escalações/i.test(l) && /Cronologia|Tabela|Estat/i.test(l)
     );
   }
   if (start < 0) return null;
@@ -2757,16 +2717,13 @@ function extractSidePanelFromTexts(textByTab = {}) {
       parseLineupFromText(statsText) ||
       parseLineupFromText(timelineText) ||
       parseLineupFromText(playerText) ||
-      parseLineupFromTitularesText(
-        [statsText, playerText, timelineText, lineupText].join("\n")
-      ),
+      parseLineupFromTitularesText([statsText, playerText, timelineText, lineupText].join("\n")),
     playerFinalizations: mergePlayerFinalizations(
       parsePlayerFinalizationsFromText(playerText),
       parsePlayerFinalizationsFromText(statsText),
       parsePlayerFinalizationsFromText(panelMerged)
     ),
-    actionAreas:
-      parseActionAreasFromText(statsText) || parseActionAreasFromText(playerText),
+    actionAreas: parseActionAreasFromText(statsText) || parseActionAreasFromText(playerText),
     tabCapture: Object.fromEntries(
       Object.entries(textByTab).map(([k, v]) => [
         k,
@@ -3054,196 +3011,198 @@ function mergeSidePanel(primary, fromNetwork = {}) {
   return { ...primary, timeline, lineup, playerFinalizations, network: fromNetwork };
 }
 
-    const networkLog = [];
-  const MAX_NET = 120;
+  const networkLog = [];
+const MAX_NET = 120;
 
-  function receiveNetworkEntry(entry) {
-    if (!entry) return;
-    const keepRaw =
-      typeof entry.data === "string" &&
-      (/\/Api\/1\/Blob\b/i.test(entry.url || "") ||
-        /sportspublisher\/zap/i.test(entry.url || "") ||
-        (entry.data.length || 0) > 4000);
-    const normalized = keepRaw
-      ? entry.data
-      : typeof entry.data === "string"
-        ? parseNetworkPayload(entry.data) ?? { _rawText: entry.data.slice(0, 4000) }
-        : entry.data;
+function receiveNetworkEntry(entry) {
+  if (!entry) return;
+  const keepRaw =
+    typeof entry.data === "string" &&
+    (/\/Api\/1\/Blob\b/i.test(entry.url || "") ||
+      /sportspublisher\/zap/i.test(entry.url || "") ||
+      (entry.data.length || 0) > 4000);
+  const normalized = keepRaw
+    ? entry.data
+    : typeof entry.data === "string"
+      ? (parseNetworkPayload(entry.data) ?? { _rawText: entry.data.slice(0, 4000) })
+      : entry.data;
 
-    networkLog.unshift({
-      url: entry.url,
-      at: entry.at || new Date().toISOString(),
-      kind: entry.kind || "fetch",
-      data: normalized ?? entry.data,
-      rawLen: entry.rawLen ?? (typeof entry.data === "string" ? entry.data.length : null),
-      hints: entry.hints || null,
-    });
-    if (networkLog.length > MAX_NET) networkLog.length = MAX_NET;
-  }
+  networkLog.unshift({
+    url: entry.url,
+    at: entry.at || new Date().toISOString(),
+    kind: entry.kind || "fetch",
+    data: normalized ?? entry.data,
+    rawLen: entry.rawLen ?? (typeof entry.data === "string" ? entry.data.length : null),
+    hints: entry.hints || null,
+  });
+  if (networkLog.length > MAX_NET) networkLog.length = MAX_NET;
+}
 
-  function pushNetwork(url, data, kind = "fetch") {
-    const u = resolveNetworkUrl(url);
-    const normalized =
-      typeof data === "string" ? parseNetworkPayload(data) ?? { _rawText: data.slice(0, 4000) } : data;
+function pushNetwork(url, data, kind = "fetch") {
+  const u = resolveNetworkUrl(url);
+  const normalized =
+    typeof data === "string"
+      ? (parseNetworkPayload(data) ?? { _rawText: data.slice(0, 4000) })
+      : data;
 
-    if (!isBet365NetworkUrl(u) && !looksLikeBet365NetworkPayload(normalized ?? data)) return;
+  if (!isBet365NetworkUrl(u) && !looksLikeBet365NetworkPayload(normalized ?? data)) return;
 
-    receiveNetworkEntry({
-      url: u || `unknown:${kind}`,
-      kind,
-      data: normalized ?? data,
-      rawLen: typeof data === "string" ? data.length : null,
-    });
-  }
+  receiveNetworkEntry({
+    url: u || `unknown:${kind}`,
+    kind,
+    data: normalized ?? data,
+    rawLen: typeof data === "string" ? data.length : null,
+  });
+}
 
-  function decodeSocketData(data) {
-    if (typeof data === "string") return data;
-    if (data instanceof ArrayBuffer) {
-      try {
-        return new TextDecoder("utf-8").decode(data);
-      } catch (_) {
-        return null;
-      }
-    }
-    if (ArrayBuffer.isView(data)) {
-      try {
-        return new TextDecoder("utf-8").decode(data.buffer);
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  function installNetworkSniffer() {
-    if (window.__bet365SnifferInstalled) return;
-    window.__bet365SnifferInstalled = true;
-
-    const origFetch = window.fetch;
-    if (origFetch) {
-      window.fetch = async function (...args) {
-        const res = await origFetch.apply(this, args);
-        try {
-          const clone = res.clone();
-          const ct = (clone.headers.get("content-type") || "").toLowerCase();
-          const url = resolveNetworkUrl(args[0]);
-          if (ct.includes("json")) {
-            const data = await clone.json().catch(() => null);
-            if (data) pushNetwork(url, data, "fetch");
-          } else if (ct.includes("text") || ct.includes("plain") || !ct) {
-            const text = await clone.text().catch(() => null);
-            if (text) pushNetwork(url, text, "fetch");
-          }
-        } catch (_) {}
-        return res;
-      };
-    }
-
-    const XO = XMLHttpRequest.prototype.open;
-    const XS = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-      this.__bet365Url = resolveNetworkUrl(url);
-      return XO.call(this, method, url, ...rest);
-    };
-    XMLHttpRequest.prototype.send = function (...args) {
-      this.addEventListener("load", function () {
-        try {
-          const url = this.__bet365Url || "";
-          const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
-          const body = this.responseText;
-          if (!body) return;
-          if (ct.includes("json")) {
-            pushNetwork(url, JSON.parse(body), "xhr");
-          } else {
-            pushNetwork(url, body, "xhr");
-          }
-        } catch (_) {}
-      });
-      return XS.apply(this, args);
-    };
-
-    const OrigWS = window.WebSocket;
-    if (OrigWS) {
-      const Bet365WS = function (url, protocols) {
-        const ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
-        const wsUrl = resolveNetworkUrl(url);
-
-        if (isBet365NetworkUrl(wsUrl)) {
-          ws.addEventListener("message", (ev) => {
-            const text = decodeSocketData(ev.data);
-            if (text) pushNetwork(`ws:${wsUrl}`, text, "ws");
-          });
-        }
-
-        return ws;
-      };
-      Bet365WS.prototype = OrigWS.prototype;
-      Object.defineProperty(Bet365WS, "CONNECTING", { value: OrigWS.CONNECTING });
-      Object.defineProperty(Bet365WS, "OPEN", { value: OrigWS.OPEN });
-      Object.defineProperty(Bet365WS, "CLOSING", { value: OrigWS.CLOSING });
-      Object.defineProperty(Bet365WS, "CLOSED", { value: OrigWS.CLOSED });
-      window.WebSocket = Bet365WS;
-    }
-  }
-
-  function initNetworkBridge() {
-    if (window.__bet365NetBridge) return;
-    window.__bet365NetBridge = true;
-
-    window.addEventListener("message", (ev) => {
-      if (ev.source !== window || ev.data?.channel !== "bet365-extractor-net") return;
-      receiveNetworkEntry(ev.data.entry);
-    });
-  }
-
-  function injectPageNetworkSniffer(pageSnifferSource) {
-    initNetworkBridge();
-    const script = document.createElement("script");
-    script.textContent = pageSnifferSource;
-    (document.documentElement || document.head || document.body).appendChild(script);
-    script.remove();
-  }
-
-  initNetworkBridge();
-  const __BET365_PAGE_SNIFFER_SOURCE__ = "(function bet365PageNetworkSniffer() {\n  if (window.__bet365PageSnifferInstalled) return;\n  window.__bet365PageSnifferInstalled = true;\n\n  const HOST_RE = /bet365/i;\n  const PAYLOAD_HINTS =\n    /stats|stat|odds|market|fixture|event|score|participant|mg|pa|ss|tu|tm|sc|xg|attack|possess|inplay|EV\\d+/i;\n  const MAX_RAW = 12000;\n  const MAX_RAW_ZAP = 500_000;\n  const MAX_BLOB_SCAN = 2_000_000;\n  const MAX_ZAP_BUFFER = 2_000_000;\n  const zapWireBuffer = { text: \"\", len: 0 };\n  const FIELD_KV_RE = /\\b([A-Z][A-Z0-9]{1,3})=([^|\\x00-\\x1f\\x14]{1,200})/g;\n  const SCORE_PAIR_RE = /\\b(?:SC|SS)=(\\d{1,2})[-–](\\d{1,2})\\b/gi;\n  const S1S2_RE = /\\bS1=(\\d{1,2})[\\s\\S]{0,60}?\\bS2=(\\d{1,2})\\b/gi;\n  const CLOCK_RE = /\\b(?:TU|TM|TC)=(\\d{1,3})[:;](\\d{2})\\b/gi;\n\n  function resolveUrl(input) {\n    if (!input) return \"\";\n    if (typeof input === \"string\") return input;\n    if (typeof input === \"object\" && typeof input.url === \"string\") return input.url;\n    return String(input);\n  }\n\n  function isBlobUrl(url) {\n    return /\\/Api\\/1\\/Blob\\b/i.test(url);\n  }\n\n  function isZapUrl(url) {\n    return /sportspublisher\\/zap/i.test(url);\n  }\n\n  const LINEUP_WIRE_SOURCE_RE = /ipe\\/5378|ipe-BR|sportspublisher\\/zap|zap-ws/i;\n  const LINEUP_BLOB_URL_RE = /ipe\\/5378|ipe-BR/i;\n  const LINEUP_UI_BLOCK_RE =\n    /Informa|Configura|Idioma|Ajuda|Dep[oó]sito|Promo|Resultados|Not[ií]cias|Empregos|Parceiros|bet365|Facebook|Instagram|Logo|Servidor|reCAPTCHA|Regras|Promoções|Áudio|Futebol|Estatísticas|Esportes|Sites|Jogue com|Todos os|Ao-Vivo|Minhas Apostas|Cassino|Popular|Criar Aposta|Instantâneas|Intervalo|Marcadores|Tabela|Cronologia|Escalação/i;\n  const LINEUP_PLAYER_SHORT_RE = /^[A-ZÀ-Ú][\\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;\n  const LINEUP_PLAYER_FULL_RE =\n    /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;\n\n  function isLineupPlayerName(name) {\n    if (!name || name.length > 40) return false;\n    if (LINEUP_UI_BLOCK_RE.test(name)) return false;\n    if (!LINEUP_PLAYER_SHORT_RE.test(name) && !LINEUP_PLAYER_FULL_RE.test(name)) return false;\n    if (/\\d/.test(name)) return false;\n    return true;\n  }\n\n  function readLineupWireContext(ctx) {\n    const out = { sub: false, team: null, order: null, shots: null, onTarget: null };\n    for (const m of ctx.matchAll(/\\b(SU|OR|TM|HI|SH|ST|S1|S2)=(\\d{1,3})/g)) {\n      const key = m[1];\n      const val = parseInt(m[2], 10);\n      if (!Number.isFinite(val)) continue;\n      if (key === \"SU\" && val === 1) out.sub = true;\n      if (key === \"OR\") out.order = val;\n      if (key === \"TM\" || key === \"HI\") out.team = val;\n      if (key === \"SH\" || key === \"S1\") out.shots = String(val);\n      if (key === \"ST\" || key === \"S2\") out.onTarget = String(val);\n    }\n    return out;\n  }\n\n  function appendZapWire(text) {\n    const chunk = String(text || \"\");\n    if (!chunk) return;\n    if (zapWireBuffer.len + chunk.length > MAX_ZAP_BUFFER) return;\n    zapWireBuffer.text += (zapWireBuffer.text ? \"\\n\" : \"\") + chunk;\n    zapWireBuffer.len += chunk.length;\n  }\n\n  function extractLineupHints(sample, url) {\n    if (!LINEUP_WIRE_SOURCE_RE.test(url)) return null;\n    const players = [];\n    const seen = new Set();\n    const recordRe =\n      /(?:\\||^|;|\\x14)(?:PG|PA|SL|PI|OV|EV|MG);([^|]{0,320})|(?:\\||^)(PA;[^|]{0,320})/gi;\n\n    let rm;\n    while ((rm = recordRe.exec(sample)) !== null) {\n      const chunk = rm[1] || rm[2] || \"\";\n      const na = chunk.match(/\\bNA=([^|;\\x00-\\x1f\\x14]{2,40})/);\n      if (!na) continue;\n      const name = na[1].trim();\n      if (!isLineupPlayerName(name)) continue;\n      const ctx = readLineupWireContext(chunk);\n      const key = `${name}|${ctx.team ?? \"\"}|${ctx.order ?? \"\"}|${ctx.sub ? 1 : 0}`;\n      if (seen.has(key)) continue;\n      seen.add(key);\n      players.push({ name, ...ctx });\n    }\n\n    if (players.length < 8) {\n      for (const m of sample.matchAll(/\\bNA=([^|;\\x00-\\x1f\\x14]{2,40})/g)) {\n        const name = m[1].trim();\n        if (!isLineupPlayerName(name)) continue;\n        const ctx = readLineupWireContext(sample.slice(m.index, m.index + 140));\n        const key = `${name}|${ctx.team ?? \"\"}|${ctx.order ?? \"\"}|${ctx.sub ? 1 : 0}`;\n        if (seen.has(key)) continue;\n        seen.add(key);\n        players.push({ name, ...ctx });\n      }\n    }\n\n    return players.length >= 8 ? players.slice(0, 40) : null;\n  }\n\n  function extractHints(text, url) {\n    const limit = isBlobUrl(url) ? MAX_BLOB_SCAN : isZapUrl(url) ? MAX_ZAP_BUFFER : 120000;\n    const sample = String(text || \"\").slice(0, limit);\n    const fields = {};\n    let m;\n    const re = new RegExp(FIELD_KV_RE.source, \"g\");\n    while ((m = re.exec(sample)) !== null) {\n      if (!(m[1] in fields)) fields[m[1]] = m[2].trim();\n    }\n\n    const matches = [];\n    const clocks = new Set();\n\n    while ((m = SCORE_PAIR_RE.exec(sample)) !== null) {\n      matches.push({ score: `${m[1]}-${m[2]}`, tag: \"SC\" });\n    }\n    while ((m = S1S2_RE.exec(sample)) !== null) {\n      matches.push({ score: `${m[1]}-${m[2]}`, tag: \"S1S2\" });\n    }\n    while ((m = CLOCK_RE.exec(sample)) !== null) {\n      const mins = parseInt(m[1], 10);\n      if (mins <= 130) clocks.add(`${mins}:${m[2]}`);\n    }\n\n    const fieldKeys = Object.keys(fields).slice(0, 24);\n    const lineupSource = isZapUrl(url) ? \"ws:sportspublisher/zap\" : url;\n    const lineupSample = isZapUrl(url) ? zapWireBuffer.text || sample : sample;\n    const lineupPlayers = extractLineupHints(lineupSample, lineupSource);\n    return {\n      fieldKeys,\n      fields: fieldKeys.length ? fields : null,\n      matches: matches.slice(-5),\n      clocks: [...clocks].slice(-5),\n      lineupPlayers,\n      zapBufferLen: isZapUrl(url) ? zapWireBuffer.len : null,\n      blob: isBlobUrl(url),\n      zap: isZapUrl(url),\n    };\n  }\n\n  function shouldCapture(url, data, hints) {\n    if (isZapUrl(url)) return true;\n    if (HOST_RE.test(url)) return true;\n    if (hints?.matches?.length || hints?.clocks?.length || hints?.fieldKeys?.length) return true;\n    const sample =\n      typeof data === \"string\" ? data.slice(0, 4000) : JSON.stringify(data || \"\").slice(0, 4000);\n    return PAYLOAD_HINTS.test(sample);\n  }\n\n  function emit(url, data, kind) {\n    const u = resolveUrl(url);\n    const rawText = typeof data === \"string\" ? data : null;\n    if (rawText && isZapUrl(u)) appendZapWire(rawText);\n    const hints = rawText ? extractHints(rawText, u) : null;\n    const payload = rawText\n      ? rawText.slice(0, isBlobUrl(u) ? MAX_RAW : isZapUrl(u) ? MAX_RAW_ZAP : MAX_RAW)\n      : data && typeof data === \"object\"\n        ? data\n        : null;\n\n    if (!payload || !shouldCapture(u, payload, hints)) return;\n\n    window.postMessage(\n      {\n        channel: \"bet365-extractor-net\",\n        entry: {\n          url: u || `unknown:${kind}`,\n          at: new Date().toISOString(),\n          kind,\n          data: payload,\n          rawLen: rawText ? rawText.length : null,\n          hints,\n        },\n      },\n      \"*\"\n    );\n  }\n\n  function decodeSocketData(data) {\n    if (typeof data === \"string\") return data;\n    if (data instanceof ArrayBuffer) {\n      try {\n        return new TextDecoder(\"utf-8\").decode(data);\n      } catch (_) {\n        return null;\n      }\n    }\n    if (ArrayBuffer.isView(data)) {\n      try {\n        return new TextDecoder(\"utf-8\").decode(data.buffer);\n      } catch (_) {\n        return null;\n      }\n    }\n    return null;\n  }\n\n  const origFetch = window.fetch;\n  if (origFetch) {\n    window.fetch = async function (...args) {\n      const res = await origFetch.apply(this, args);\n      try {\n        const clone = res.clone();\n        const ct = (clone.headers.get(\"content-type\") || \"\").toLowerCase();\n        const url = resolveUrl(args[0]);\n        if (isBlobUrl(url) || ct.includes(\"javascript\") || ct.includes(\"octet\")) {\n          const text = await clone.text().catch(() => null);\n          if (text) emit(url, text, \"fetch\");\n        } else if (ct.includes(\"json\")) {\n          const data = await clone.json().catch(() => null);\n          if (data) emit(url, data, \"fetch\");\n        } else if (ct.includes(\"text\") || ct.includes(\"plain\") || !ct) {\n          const text = await clone.text().catch(() => null);\n          if (text) emit(url, text, \"fetch\");\n        }\n      } catch (_) {}\n      return res;\n    };\n  }\n\n  const XO = XMLHttpRequest.prototype.open;\n  const XS = XMLHttpRequest.prototype.send;\n  XMLHttpRequest.prototype.open = function (method, url, ...rest) {\n    this.__bet365Url = resolveUrl(url);\n    return XO.call(this, method, url, ...rest);\n  };\n  XMLHttpRequest.prototype.send = function (...args) {\n    this.addEventListener(\"load\", function () {\n      try {\n        const url = this.__bet365Url || \"\";\n        const ct = (this.getResponseHeader(\"content-type\") || \"\").toLowerCase();\n        const body = this.responseText;\n        if (!body) return;\n        if (isBlobUrl(url) || ct.includes(\"javascript\") || ct.includes(\"octet\")) {\n          emit(url, body, \"xhr\");\n        } else if (ct.includes(\"json\")) {\n          try {\n            emit(url, JSON.parse(body), \"xhr\");\n          } catch (_) {\n            emit(url, body, \"xhr\");\n          }\n        } else {\n          emit(url, body, \"xhr\");\n        }\n      } catch (_) {}\n    });\n    return XS.apply(this, args);\n  };\n\n  const OrigWS = window.WebSocket;\n  if (OrigWS) {\n    const Bet365WS = function (url, protocols) {\n      const ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);\n      const wsUrl = resolveUrl(url);\n      if (HOST_RE.test(wsUrl)) {\n        ws.addEventListener(\"message\", (ev) => {\n          const text = decodeSocketData(ev.data);\n          if (text) emit(`ws:${wsUrl}`, text, \"ws\");\n        });\n      }\n      return ws;\n    };\n    Bet365WS.prototype = OrigWS.prototype;\n    [\"CONNECTING\", \"OPEN\", \"CLOSING\", \"CLOSED\"].forEach((k) => {\n      Object.defineProperty(Bet365WS, k, { value: OrigWS[k] });\n    });\n    window.WebSocket = Bet365WS;\n  }\n})();";
-
-    function walkWindowFrames(win, depth, out, seen) {
-    if (!win || depth > 14 || seen.has(win)) return;
-    seen.add(win);
-
+function decodeSocketData(data) {
+  if (typeof data === "string") return data;
+  if (data instanceof ArrayBuffer) {
     try {
-      const doc = win.document;
-      if (!doc) return;
+      return new TextDecoder("utf-8").decode(data);
+    } catch (_) {
+      return null;
+    }
+  }
+  if (ArrayBuffer.isView(data)) {
+    try {
+      return new TextDecoder("utf-8").decode(data.buffer);
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
 
-      const text = doc.documentElement?.innerText || doc.body?.innerText || "";
-      const href = win.location?.href || "";
+function installNetworkSniffer() {
+  if (window.__bet365SnifferInstalled) return;
+  window.__bet365SnifferInstalled = true;
 
-      if (text && text.length > 0 && text.length < 8000) {
-        out.push({
-          text: text.slice(0, 3500),
-          href,
-          depth,
-          source: depth > 0 ? "frame-walk" : "frame-root",
+  const origFetch = window.fetch;
+  if (origFetch) {
+    window.fetch = async function (...args) {
+      const res = await origFetch.apply(this, args);
+      try {
+        const clone = res.clone();
+        const ct = (clone.headers.get("content-type") || "").toLowerCase();
+        const url = resolveNetworkUrl(args[0]);
+        if (ct.includes("json")) {
+          const data = await clone.json().catch(() => null);
+          if (data) pushNetwork(url, data, "fetch");
+        } else if (ct.includes("text") || ct.includes("plain") || !ct) {
+          const text = await clone.text().catch(() => null);
+          if (text) pushNetwork(url, text, "fetch");
+        }
+      } catch (_) {}
+      return res;
+    };
+  }
+
+  const XO = XMLHttpRequest.prototype.open;
+  const XS = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    this.__bet365Url = resolveNetworkUrl(url);
+    return XO.call(this, method, url, ...rest);
+  };
+  XMLHttpRequest.prototype.send = function (...args) {
+    this.addEventListener("load", function () {
+      try {
+        const url = this.__bet365Url || "";
+        const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
+        const body = this.responseText;
+        if (!body) return;
+        if (ct.includes("json")) {
+          pushNetwork(url, JSON.parse(body), "xhr");
+        } else {
+          pushNetwork(url, body, "xhr");
+        }
+      } catch (_) {}
+    });
+    return XS.apply(this, args);
+  };
+
+  const OrigWS = window.WebSocket;
+  if (OrigWS) {
+    const Bet365WS = function (url, protocols) {
+      const ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
+      const wsUrl = resolveNetworkUrl(url);
+
+      if (isBet365NetworkUrl(wsUrl)) {
+        ws.addEventListener("message", (ev) => {
+          const text = decodeSocketData(ev.data);
+          if (text) pushNetwork(`ws:${wsUrl}`, text, "ws");
         });
       }
 
-      for (let i = 0; i < win.frames.length; i++) {
-        walkWindowFrames(win.frames[i], depth + 1, out, seen);
-      }
-    } catch (_) {}
+      return ws;
+    };
+    Bet365WS.prototype = OrigWS.prototype;
+    Object.defineProperty(Bet365WS, "CONNECTING", { value: OrigWS.CONNECTING });
+    Object.defineProperty(Bet365WS, "OPEN", { value: OrigWS.OPEN });
+    Object.defineProperty(Bet365WS, "CLOSING", { value: OrigWS.CLOSING });
+    Object.defineProperty(Bet365WS, "CLOSED", { value: OrigWS.CLOSED });
+    window.WebSocket = Bet365WS;
   }
+}
 
-  function collectFrameWalkTexts() {
-    const out = [];
-    const seen = new Set();
-    walkWindowFrames(window, 0, out, seen);
-    return out.filter(
-      (f) =>
-        f.depth > 0 ||
-        /\d{1,2}\s*[-–]\s*\d{1,2}/.test(f.text) ||
-        /\b\d{2,3}:\d{2}\b/.test(f.text)
-    );
-  }
+function initNetworkBridge() {
+  if (window.__bet365NetBridge) return;
+  window.__bet365NetBridge = true;
+
+  window.addEventListener("message", (ev) => {
+    if (ev.source !== window || ev.data?.channel !== "bet365-extractor-net") return;
+    receiveNetworkEntry(ev.data.entry);
+  });
+}
+
+function injectPageNetworkSniffer(pageSnifferSource) {
+  initNetworkBridge();
+  const script = document.createElement("script");
+  script.textContent = pageSnifferSource;
+  (document.documentElement || document.head || document.body).appendChild(script);
+  script.remove();
+}
+
+initNetworkBridge();
+  const __BET365_PAGE_SNIFFER_SOURCE__ = "(function bet365PageNetworkSniffer() {\n  if (window.__bet365PageSnifferInstalled) return;\n  window.__bet365PageSnifferInstalled = true;\n\n  const HOST_RE = /bet365/i;\n  const PAYLOAD_HINTS =\n    /stats|stat|odds|market|fixture|event|score|participant|mg|pa|ss|tu|tm|sc|xg|attack|possess|inplay|EV\\d+/i;\n  const MAX_RAW = 12000;\n  const MAX_RAW_ZAP = 500_000;\n  const MAX_BLOB_SCAN = 2_000_000;\n  const MAX_ZAP_BUFFER = 2_000_000;\n  const zapWireBuffer = { text: \"\", len: 0 };\n  const FIELD_KV_RE = /\\b([A-Z][A-Z0-9]{1,3})=([^|\\x00-\\x1f\\x14]{1,200})/g;\n  const SCORE_PAIR_RE = /\\b(?:SC|SS)=(\\d{1,2})[-–](\\d{1,2})\\b/gi;\n  const S1S2_RE = /\\bS1=(\\d{1,2})[\\s\\S]{0,60}?\\bS2=(\\d{1,2})\\b/gi;\n  const CLOCK_RE = /\\b(?:TU|TM|TC)=(\\d{1,3})[:;](\\d{2})\\b/gi;\n\n  function resolveUrl(input) {\n    if (!input) return \"\";\n    if (typeof input === \"string\") return input;\n    if (typeof input === \"object\" && typeof input.url === \"string\") return input.url;\n    return String(input);\n  }\n\n  function isBlobUrl(url) {\n    return /\\/Api\\/1\\/Blob\\b/i.test(url);\n  }\n\n  function isZapUrl(url) {\n    return /sportspublisher\\/zap/i.test(url);\n  }\n\n  const LINEUP_WIRE_SOURCE_RE = /ipe\\/5378|ipe-BR|sportspublisher\\/zap|zap-ws/i;\n  const LINEUP_BLOB_URL_RE = /ipe\\/5378|ipe-BR/i;\n  const LINEUP_UI_BLOCK_RE =\n    /Informa|Configura|Idioma|Ajuda|Dep[oó]sito|Promo|Resultados|Not[ií]cias|Empregos|Parceiros|bet365|Facebook|Instagram|Logo|Servidor|reCAPTCHA|Regras|Promoções|Áudio|Futebol|Estatísticas|Esportes|Sites|Jogue com|Todos os|Ao-Vivo|Minhas Apostas|Cassino|Popular|Criar Aposta|Instantâneas|Intervalo|Marcadores|Tabela|Cronologia|Escalação/i;\n  const LINEUP_PLAYER_SHORT_RE = /^[A-ZÀ-Ú][\\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;\n  const LINEUP_PLAYER_FULL_RE = /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;\n\n  function isLineupPlayerName(name) {\n    if (!name || name.length > 40) return false;\n    if (LINEUP_UI_BLOCK_RE.test(name)) return false;\n    if (!LINEUP_PLAYER_SHORT_RE.test(name) && !LINEUP_PLAYER_FULL_RE.test(name)) return false;\n    if (/\\d/.test(name)) return false;\n    return true;\n  }\n\n  function readLineupWireContext(ctx) {\n    const out = { sub: false, team: null, order: null, shots: null, onTarget: null };\n    for (const m of ctx.matchAll(/\\b(SU|OR|TM|HI|SH|ST|S1|S2)=(\\d{1,3})/g)) {\n      const key = m[1];\n      const val = parseInt(m[2], 10);\n      if (!Number.isFinite(val)) continue;\n      if (key === \"SU\" && val === 1) out.sub = true;\n      if (key === \"OR\") out.order = val;\n      if (key === \"TM\" || key === \"HI\") out.team = val;\n      if (key === \"SH\" || key === \"S1\") out.shots = String(val);\n      if (key === \"ST\" || key === \"S2\") out.onTarget = String(val);\n    }\n    return out;\n  }\n\n  function appendZapWire(text) {\n    const chunk = String(text || \"\");\n    if (!chunk) return;\n    if (zapWireBuffer.len + chunk.length > MAX_ZAP_BUFFER) return;\n    zapWireBuffer.text += (zapWireBuffer.text ? \"\\n\" : \"\") + chunk;\n    zapWireBuffer.len += chunk.length;\n  }\n\n  function extractLineupHints(sample, url) {\n    if (!LINEUP_WIRE_SOURCE_RE.test(url)) return null;\n    const players = [];\n    const seen = new Set();\n    const recordRe =\n      /(?:\\||^|;|\\x14)(?:PG|PA|SL|PI|OV|EV|MG);([^|]{0,320})|(?:\\||^)(PA;[^|]{0,320})/gi;\n\n    let rm;\n    while ((rm = recordRe.exec(sample)) !== null) {\n      const chunk = rm[1] || rm[2] || \"\";\n      const na = chunk.match(/\\bNA=([^|;\\x00-\\x1f\\x14]{2,40})/);\n      if (!na) continue;\n      const name = na[1].trim();\n      if (!isLineupPlayerName(name)) continue;\n      const ctx = readLineupWireContext(chunk);\n      const key = `${name}|${ctx.team ?? \"\"}|${ctx.order ?? \"\"}|${ctx.sub ? 1 : 0}`;\n      if (seen.has(key)) continue;\n      seen.add(key);\n      players.push({ name, ...ctx });\n    }\n\n    if (players.length < 8) {\n      for (const m of sample.matchAll(/\\bNA=([^|;\\x00-\\x1f\\x14]{2,40})/g)) {\n        const name = m[1].trim();\n        if (!isLineupPlayerName(name)) continue;\n        const ctx = readLineupWireContext(sample.slice(m.index, m.index + 140));\n        const key = `${name}|${ctx.team ?? \"\"}|${ctx.order ?? \"\"}|${ctx.sub ? 1 : 0}`;\n        if (seen.has(key)) continue;\n        seen.add(key);\n        players.push({ name, ...ctx });\n      }\n    }\n\n    return players.length >= 8 ? players.slice(0, 40) : null;\n  }\n\n  function extractHints(text, url) {\n    const limit = isBlobUrl(url) ? MAX_BLOB_SCAN : isZapUrl(url) ? MAX_ZAP_BUFFER : 120000;\n    const sample = String(text || \"\").slice(0, limit);\n    const fields = {};\n    let m;\n    const re = new RegExp(FIELD_KV_RE.source, \"g\");\n    while ((m = re.exec(sample)) !== null) {\n      if (!(m[1] in fields)) fields[m[1]] = m[2].trim();\n    }\n\n    const matches = [];\n    const clocks = new Set();\n\n    while ((m = SCORE_PAIR_RE.exec(sample)) !== null) {\n      matches.push({ score: `${m[1]}-${m[2]}`, tag: \"SC\" });\n    }\n    while ((m = S1S2_RE.exec(sample)) !== null) {\n      matches.push({ score: `${m[1]}-${m[2]}`, tag: \"S1S2\" });\n    }\n    while ((m = CLOCK_RE.exec(sample)) !== null) {\n      const mins = parseInt(m[1], 10);\n      if (mins <= 130) clocks.add(`${mins}:${m[2]}`);\n    }\n\n    const fieldKeys = Object.keys(fields).slice(0, 24);\n    const lineupSource = isZapUrl(url) ? \"ws:sportspublisher/zap\" : url;\n    const lineupSample = isZapUrl(url) ? zapWireBuffer.text || sample : sample;\n    const lineupPlayers = extractLineupHints(lineupSample, lineupSource);\n    return {\n      fieldKeys,\n      fields: fieldKeys.length ? fields : null,\n      matches: matches.slice(-5),\n      clocks: [...clocks].slice(-5),\n      lineupPlayers,\n      zapBufferLen: isZapUrl(url) ? zapWireBuffer.len : null,\n      blob: isBlobUrl(url),\n      zap: isZapUrl(url),\n    };\n  }\n\n  function shouldCapture(url, data, hints) {\n    if (isZapUrl(url)) return true;\n    if (HOST_RE.test(url)) return true;\n    if (hints?.matches?.length || hints?.clocks?.length || hints?.fieldKeys?.length) return true;\n    const sample =\n      typeof data === \"string\" ? data.slice(0, 4000) : JSON.stringify(data || \"\").slice(0, 4000);\n    return PAYLOAD_HINTS.test(sample);\n  }\n\n  function emit(url, data, kind) {\n    const u = resolveUrl(url);\n    const rawText = typeof data === \"string\" ? data : null;\n    if (rawText && isZapUrl(u)) appendZapWire(rawText);\n    const hints = rawText ? extractHints(rawText, u) : null;\n    const payload = rawText\n      ? rawText.slice(0, isBlobUrl(u) ? MAX_RAW : isZapUrl(u) ? MAX_RAW_ZAP : MAX_RAW)\n      : data && typeof data === \"object\"\n        ? data\n        : null;\n\n    if (!payload || !shouldCapture(u, payload, hints)) return;\n\n    window.postMessage(\n      {\n        channel: \"bet365-extractor-net\",\n        entry: {\n          url: u || `unknown:${kind}`,\n          at: new Date().toISOString(),\n          kind,\n          data: payload,\n          rawLen: rawText ? rawText.length : null,\n          hints,\n        },\n      },\n      \"*\"\n    );\n  }\n\n  function decodeSocketData(data) {\n    if (typeof data === \"string\") return data;\n    if (data instanceof ArrayBuffer) {\n      try {\n        return new TextDecoder(\"utf-8\").decode(data);\n      } catch (_) {\n        return null;\n      }\n    }\n    if (ArrayBuffer.isView(data)) {\n      try {\n        return new TextDecoder(\"utf-8\").decode(data.buffer);\n      } catch (_) {\n        return null;\n      }\n    }\n    return null;\n  }\n\n  const origFetch = window.fetch;\n  if (origFetch) {\n    window.fetch = async function (...args) {\n      const res = await origFetch.apply(this, args);\n      try {\n        const clone = res.clone();\n        const ct = (clone.headers.get(\"content-type\") || \"\").toLowerCase();\n        const url = resolveUrl(args[0]);\n        if (isBlobUrl(url) || ct.includes(\"javascript\") || ct.includes(\"octet\")) {\n          const text = await clone.text().catch(() => null);\n          if (text) emit(url, text, \"fetch\");\n        } else if (ct.includes(\"json\")) {\n          const data = await clone.json().catch(() => null);\n          if (data) emit(url, data, \"fetch\");\n        } else if (ct.includes(\"text\") || ct.includes(\"plain\") || !ct) {\n          const text = await clone.text().catch(() => null);\n          if (text) emit(url, text, \"fetch\");\n        }\n      } catch (_) {}\n      return res;\n    };\n  }\n\n  const XO = XMLHttpRequest.prototype.open;\n  const XS = XMLHttpRequest.prototype.send;\n  XMLHttpRequest.prototype.open = function (method, url, ...rest) {\n    this.__bet365Url = resolveUrl(url);\n    return XO.call(this, method, url, ...rest);\n  };\n  XMLHttpRequest.prototype.send = function (...args) {\n    this.addEventListener(\"load\", function () {\n      try {\n        const url = this.__bet365Url || \"\";\n        const ct = (this.getResponseHeader(\"content-type\") || \"\").toLowerCase();\n        const body = this.responseText;\n        if (!body) return;\n        if (isBlobUrl(url) || ct.includes(\"javascript\") || ct.includes(\"octet\")) {\n          emit(url, body, \"xhr\");\n        } else if (ct.includes(\"json\")) {\n          try {\n            emit(url, JSON.parse(body), \"xhr\");\n          } catch (_) {\n            emit(url, body, \"xhr\");\n          }\n        } else {\n          emit(url, body, \"xhr\");\n        }\n      } catch (_) {}\n    });\n    return XS.apply(this, args);\n  };\n\n  const OrigWS = window.WebSocket;\n  if (OrigWS) {\n    const Bet365WS = function (url, protocols) {\n      const ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);\n      const wsUrl = resolveUrl(url);\n      if (HOST_RE.test(wsUrl)) {\n        ws.addEventListener(\"message\", (ev) => {\n          const text = decodeSocketData(ev.data);\n          if (text) emit(`ws:${wsUrl}`, text, \"ws\");\n        });\n      }\n      return ws;\n    };\n    Bet365WS.prototype = OrigWS.prototype;\n    [\"CONNECTING\", \"OPEN\", \"CLOSING\", \"CLOSED\"].forEach((k) => {\n      Object.defineProperty(Bet365WS, k, { value: OrigWS[k] });\n    });\n    window.WebSocket = Bet365WS;\n  }\n})();\n";
+
+
+  function walkWindowFrames(win, depth, out, seen) {
+  if (!win || depth > 14 || seen.has(win)) return;
+  seen.add(win);
+
+  try {
+    const doc = win.document;
+    if (!doc) return;
+
+    const text = doc.documentElement?.innerText || doc.body?.innerText || "";
+    const href = win.location?.href || "";
+
+    if (text && text.length > 0 && text.length < 8000) {
+      out.push({
+        text: text.slice(0, 3500),
+        href,
+        depth,
+        source: depth > 0 ? "frame-walk" : "frame-root",
+      });
+    }
+
+    for (let i = 0; i < win.frames.length; i++) {
+      walkWindowFrames(win.frames[i], depth + 1, out, seen);
+    }
+  } catch (_) {}
+}
+
+function collectFrameWalkTexts() {
+  const out = [];
+  const seen = new Set();
+  walkWindowFrames(window, 0, out, seen);
+  return out.filter(
+    (f) =>
+      f.depth > 0 || /\d{1,2}\s*[-–]\s*\d{1,2}/.test(f.text) || /\b\d{2,3}:\d{2}\b/.test(f.text)
+  );
+}
+
 
   function getAllVisibleText() {
     const chunks = [];
@@ -3294,7 +3253,9 @@ function mergeSidePanel(primary, fromNetwork = {}) {
       seen.add(node);
       if (node.querySelectorAll) roots.push(node);
       node.querySelectorAll?.("iframe, frame").forEach((f) => {
-        try { if (f.contentDocument) walk(f.contentDocument, d + 1); } catch (_) {}
+        try {
+          if (f.contentDocument) walk(f.contentDocument, d + 1);
+        } catch (_) {}
       });
       node.querySelectorAll?.("*").forEach((el) => {
         if (el.shadowRoot) walk(el.shadowRoot, d + 1);
@@ -3309,7 +3270,10 @@ function mergeSidePanel(primary, fromNetwork = {}) {
     const seen = new Set();
     getAllRoots().forEach((r) => {
       r.querySelectorAll(sel).forEach((el) => {
-        if (!seen.has(el)) { seen.add(el); out.push(el); }
+        if (!seen.has(el)) {
+          seen.add(el);
+          out.push(el);
+        }
       });
     });
     return out;
@@ -3490,9 +3454,7 @@ function mergeSidePanel(primary, fromNetwork = {}) {
       el.dispatchEvent(
         new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window })
       );
-      el.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
-      );
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
     } catch (_) {}
     try {
       el.click();
@@ -3740,7 +3702,8 @@ function mergeSidePanel(primary, fromNetwork = {}) {
   function extractOddsFromDOM() {
     const odds = [];
     const seen = new Set();
-    const marketSels = "[class*='MarketGroup'], [class*='HorizontalMarket'], [class*='Market_Column']";
+    const marketSels =
+      "[class*='MarketGroup'], [class*='HorizontalMarket'], [class*='Market_Column']";
 
     queryDeep(marketSels).forEach((group) => {
       const market = normalize(
@@ -3765,9 +3728,8 @@ function mergeSidePanel(primary, fromNetwork = {}) {
 
           if (!isValidSelection(selection) || !isValidOdd(odd)) return;
 
-          const fullSelection = handicap && isLineValue(handicap)
-            ? `${selection} (${handicap})`
-            : selection;
+          const fullSelection =
+            handicap && isLineValue(handicap) ? `${selection} (${handicap})` : selection;
 
           const key = `${market}|${fullSelection}|${odd}`;
           if (seen.has(key)) return;
@@ -3854,7 +3816,11 @@ function mergeSidePanel(primary, fromNetwork = {}) {
     return {
       snapshots,
       scrollSteps: snapshots.length,
-      container: collects.map((c) => c?.container).filter(Boolean).join(" | ") || null,
+      container:
+        collects
+          .map((c) => c?.container)
+          .filter(Boolean)
+          .join(" | ") || null,
       playerMarkets,
     };
   }
@@ -3879,9 +3845,7 @@ function mergeSidePanel(primary, fromNetwork = {}) {
           error: res?.error || "scroll-failed",
         };
       }
-      return (
-        res.result || { snapshots: [], scrollSteps: 0, container: null, playerMarkets: 0 }
-      );
+      return res.result || { snapshots: [], scrollSteps: 0, container: null, playerMarkets: 0 };
     } catch (err) {
       return {
         snapshots: [],
@@ -3982,9 +3946,7 @@ function mergeSidePanel(primary, fromNetwork = {}) {
     const extractedAt = new Date().toISOString();
     const { textByTab, tabClicks } = await collectSidePanelTexts();
     const visibleText =
-      Object.values(textByTab)
-        .filter(Boolean)
-        .join("\n---SIDE-TAB---\n") || getAllVisibleText();
+      Object.values(textByTab).filter(Boolean).join("\n---SIDE-TAB---\n") || getAllVisibleText();
     pipeline.push({
       step: "sidePanelTabs",
       ok: Object.values(tabClicks).some(Boolean),

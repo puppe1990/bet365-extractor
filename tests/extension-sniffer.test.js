@@ -25,14 +25,8 @@ function readBuilt(relativePath) {
 
 describe("extension-background helpers", () => {
   it("shouldInjectSniffer aceita URL de jogo ao vivo", () => {
-    assert.equal(
-      shouldInjectSniffer("https://www.bet365.bet.br/#/IP/EV151352326692C1/"),
-      true
-    );
-    assert.equal(
-      shouldInjectSniffer("https://www.bet365.com/#/IP/EV123456789012C1/"),
-      true
-    );
+    assert.equal(shouldInjectSniffer("https://www.bet365.bet.br/#/IP/EV151352326692C1/"), true);
+    assert.equal(shouldInjectSniffer("https://www.bet365.com/#/IP/EV123456789012C1/"), true);
   });
 
   it("shouldInjectSniffer rejeita home e páginas sem evento", () => {
@@ -41,10 +35,7 @@ describe("extension-background helpers", () => {
   });
 
   it("resolveExtractTabId prioriza tabId da mensagem", () => {
-    assert.equal(
-      resolveExtractTabId({ tabId: 42 }, { tab: { id: 7 } }),
-      42
-    );
+    assert.equal(resolveExtractTabId({ tabId: 42 }, { tab: { id: 7 } }), 42);
     assert.equal(resolveExtractTabId({}, { tab: { id: 7 } }), 7);
     assert.equal(resolveExtractTabId({}, {}), null);
   });
@@ -61,10 +52,7 @@ describe("extension-background helpers", () => {
   });
 
   it("sanitizeDownloadRequest limpa caracteres inválidos", () => {
-    assert.equal(
-      sanitizeDownloadRequest("copa/jogo:test.zip"),
-      "copa-jogo-test.zip"
-    );
+    assert.equal(sanitizeDownloadRequest("copa/jogo:test.zip"), "copa-jogo-test.zip");
   });
 
   it("buildDownloadOptions preserva filename no service worker", () => {
@@ -93,16 +81,9 @@ describe("extension-background helpers", () => {
       "copa-do-mundo-2026-argentina-austria-0-0-2026-06-22_17-27-16.zip"
     );
 
-    const resolved = resolveDeterminedFilename(
-      { byExtensionId: "ext-1" },
-      pending,
-      "ext-1"
-    );
+    const resolved = resolveDeterminedFilename({ byExtensionId: "ext-1" }, pending, "ext-1");
 
-    assert.equal(
-      resolved,
-      "copa-do-mundo-2026-argentina-austria-0-0-2026-06-22_17-27-16.zip"
-    );
+    assert.equal(resolved, "copa-do-mundo-2026-argentina-austria-0-0-2026-06-22_17-27-16.zip");
     assert.equal(pending.value, null);
   });
 });

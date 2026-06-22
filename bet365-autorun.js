@@ -1,4 +1,3 @@
-
 // ─── AUTO-RUN: executa todos os comandos automaticamente ───────────────────
 (async function bet365AutoRunAll() {
   const C = window.bet365C || {

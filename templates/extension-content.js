@@ -60,7 +60,9 @@
       seen.add(node);
       if (node.querySelectorAll) roots.push(node);
       node.querySelectorAll?.("iframe, frame").forEach((f) => {
-        try { if (f.contentDocument) walk(f.contentDocument, d + 1); } catch (_) {}
+        try {
+          if (f.contentDocument) walk(f.contentDocument, d + 1);
+        } catch (_) {}
       });
       node.querySelectorAll?.("*").forEach((el) => {
         if (el.shadowRoot) walk(el.shadowRoot, d + 1);
@@ -75,7 +77,10 @@
     const seen = new Set();
     getAllRoots().forEach((r) => {
       r.querySelectorAll(sel).forEach((el) => {
-        if (!seen.has(el)) { seen.add(el); out.push(el); }
+        if (!seen.has(el)) {
+          seen.add(el);
+          out.push(el);
+        }
       });
     });
     return out;
@@ -256,9 +261,7 @@
       el.dispatchEvent(
         new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window })
       );
-      el.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
-      );
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
     } catch (_) {}
     try {
       el.click();
@@ -506,7 +509,8 @@
   function extractOddsFromDOM() {
     const odds = [];
     const seen = new Set();
-    const marketSels = "[class*='MarketGroup'], [class*='HorizontalMarket'], [class*='Market_Column']";
+    const marketSels =
+      "[class*='MarketGroup'], [class*='HorizontalMarket'], [class*='Market_Column']";
 
     queryDeep(marketSels).forEach((group) => {
       const market = normalize(
@@ -531,9 +535,8 @@
 
           if (!isValidSelection(selection) || !isValidOdd(odd)) return;
 
-          const fullSelection = handicap && isLineValue(handicap)
-            ? `${selection} (${handicap})`
-            : selection;
+          const fullSelection =
+            handicap && isLineValue(handicap) ? `${selection} (${handicap})` : selection;
 
           const key = `${market}|${fullSelection}|${odd}`;
           if (seen.has(key)) return;
@@ -620,7 +623,11 @@
     return {
       snapshots,
       scrollSteps: snapshots.length,
-      container: collects.map((c) => c?.container).filter(Boolean).join(" | ") || null,
+      container:
+        collects
+          .map((c) => c?.container)
+          .filter(Boolean)
+          .join(" | ") || null,
       playerMarkets,
     };
   }
@@ -645,9 +652,7 @@
           error: res?.error || "scroll-failed",
         };
       }
-      return (
-        res.result || { snapshots: [], scrollSteps: 0, container: null, playerMarkets: 0 }
-      );
+      return res.result || { snapshots: [], scrollSteps: 0, container: null, playerMarkets: 0 };
     } catch (err) {
       return {
         snapshots: [],
@@ -748,9 +753,7 @@
     const extractedAt = new Date().toISOString();
     const { textByTab, tabClicks } = await collectSidePanelTexts();
     const visibleText =
-      Object.values(textByTab)
-        .filter(Boolean)
-        .join("\n---SIDE-TAB---\n") || getAllVisibleText();
+      Object.values(textByTab).filter(Boolean).join("\n---SIDE-TAB---\n") || getAllVisibleText();
     pipeline.push({
       step: "sidePanelTabs",
       ok: Object.values(tabClicks).some(Boolean),

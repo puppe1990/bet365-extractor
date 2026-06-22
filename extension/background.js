@@ -62,13 +62,16 @@ function scrollMarketsInMainWorld(tabId, maxSteps = 14) {
       func: mainWorldMarketScrollFunc,
       args: [maxSteps],
     })
-    .then((results) => results?.[0]?.result ?? {
-      snapshots: [],
-      scrollSteps: 0,
-      container: null,
-      playerMarkets: 0,
-      world: "MAIN",
-    });
+    .then(
+      (results) =>
+        results?.[0]?.result ?? {
+          snapshots: [],
+          scrollSteps: 0,
+          container: null,
+          playerMarkets: 0,
+          world: "MAIN",
+        }
+    );
 }
 
 async function extractFromTab(tabId) {
@@ -82,11 +85,7 @@ async function extractFromTab(tabId) {
 }
 
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-  const customName = resolveDeterminedFilename(
-    item,
-    pendingDownloadFilename,
-    chrome.runtime.id
-  );
+  const customName = resolveDeterminedFilename(item, pendingDownloadFilename, chrome.runtime.id);
   if (customName) {
     suggest({ filename: customName, conflictAction: "uniquify" });
   }
@@ -130,9 +129,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((err) =>
         sendResponse({
           ok: false,
-          error:
-            err?.message ||
-            "Recarregue a página Bet365 (F5) e tente de novo",
+          error: err?.message || "Recarregue a página Bet365 (F5) e tente de novo",
         })
       );
     return true;
