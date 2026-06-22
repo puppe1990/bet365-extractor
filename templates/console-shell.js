@@ -276,7 +276,7 @@
     });
 
     const stats = mergeStats(
-      extractStatsFromVisibleText(visibleText),
+      extractStatsFromVisibleText(visibleText, location.href),
       extractStatsFromDOM(),
       fromNet.stats
     );

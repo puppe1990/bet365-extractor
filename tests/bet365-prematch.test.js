@@ -76,6 +76,23 @@ describe("pré-jogo Nova Zelândia x Egito", () => {
     assert.equal(chutes, undefined);
   });
 
+  it("não extrai stats de visible-lines em pré-jogo", () => {
+    const text = [
+      "Copa do Mundo 2026",
+      "Nova Zelândia v Egito",
+      "Chutes",
+      "Nova Zelândia",
+      "6.00",
+      "Empate",
+      "4.20",
+      "Jogador - Chutes ao Gol de Fora da Área",
+      "11.00",
+      "12.00",
+    ].join("\n");
+
+    assert.deepEqual(extractStatsFromVisibleText(text, PREMATCH_URL), []);
+  });
+
   it("mantém odds do Resultado Final", () => {
     const odds = parseOddsFromVisibleText(FIXTURE);
     const bySelection = Object.fromEntries(odds.map((o) => [o.selection, o]));
