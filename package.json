@@ -1,0 +1,11 @@
+{
+  "name": "bet365-extractor",
+  "version": "3.10.1",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/**/*.test.js",
+    "build": "node scripts/build-console.mjs && node scripts/build-html.mjs && node scripts/build-extension.mjs",
+    "build:html": "node scripts/build-html.mjs",
+    "build:extension": "node scripts/build-extension.mjs"
+  }
+}
