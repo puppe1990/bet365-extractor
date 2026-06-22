@@ -55,6 +55,21 @@ describe("parseTimelineFromText", () => {
     assert.ok(!events.some((e) => e.type === "corner"));
   });
 
+  it("separa gol e substituição quando o minuto do gol vem depois no DOM", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-france-iraq.txt"));
+    const goal = events.find((e) => e.type === "goal");
+    const substitution = events.find((e) => e.type === "substitution");
+    const corners = events.filter((e) => e.type === "corner");
+
+    assert.equal(substitution?.minute, 26);
+    assert.equal(goal?.minute, 15);
+    assert.match(goal?.description || "", /Mbappe/i);
+    assert.match(goal?.description || "", /Olise/i);
+    assert.equal(corners.length, 2);
+    assert.equal(corners.find((e) => /1[º°]/.test(e.description))?.minute, 8);
+    assert.equal(corners.find((e) => /2[º°]/.test(e.description))?.minute, 31);
+  });
+
   it("ignora odds e nomes de jogador da coluna esquerda", () => {
     const events = parseTimelineFromText(readFixture("side-panel-timeline-noise.txt"));
 
@@ -65,11 +80,12 @@ describe("parseTimelineFromText", () => {
     );
     assert.ok(events.every((e) => !/\d+\.\d{2}/.test(e.description)));
 
-    const goal = events.find((e) => e.minute === 41);
+    const goal = events.find((e) => e.minute === 41 && e.type === "goal");
+    const card = events.find((e) => e.minute === 41 && e.type === "card");
     assert.ok(goal);
-    assert.equal(goal.type, "goal");
+    assert.ok(card);
     assert.match(goal.description, /Messi - Chute/);
-    assert.match(goal.description, /Cartão Amarelo/);
+    assert.match(card.description, /Cartão Amarelo/);
 
     const corners = events.filter((e) => e.type === "corner");
     assert.equal(corners.length, 2);
