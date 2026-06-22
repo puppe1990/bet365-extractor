@@ -1,12 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildZipEntries, buildZipFilename } from "../lib/bet365-zip.js";
+import {
+  buildZipEntries,
+  buildZipFilename,
+  sanitizeDownloadFilename,
+} from "../lib/bet365-zip.js";
 import { formatBet365DebugLogs, formatBet365TraceLogs } from "../lib/bet365-format.js";
 
 const SAMPLE = {
   match: {
     homeTeam: "Uruguai",
     awayTeam: "Cabo Verde",
+    competition: "Copa do Mundo 2026",
     score: "2-2",
     scoreDom: "2-1",
     scoreInferredFrom: "markets",
@@ -90,8 +95,21 @@ describe("formatBet365TraceLogs", () => {
 });
 
 describe("buildZipFilename", () => {
-  it("gera nome do arquivo zip", () => {
+  it("gera nome campeonato-jogo-placar-timestamp.zip", () => {
     const name = buildZipFilename(SAMPLE, "2026-06-21T23:30:00.000Z");
-    assert.match(name, /^bet365-uruguai-caboverde-.*\.zip$/);
+    assert.equal(
+      name,
+      "copa-do-mundo-2026-uruguai-cabo-verde-2-2-2026-06-21_23-30-00.zip"
+    );
+  });
+});
+
+describe("sanitizeDownloadFilename", () => {
+  it("remove caracteres inválidos para chrome.downloads", () => {
+    const safe = sanitizeDownloadFilename(
+      "copa/jogo:test.zip",
+      "fallback.zip"
+    );
+    assert.equal(safe, "copa-jogo-test.zip");
   });
 });
