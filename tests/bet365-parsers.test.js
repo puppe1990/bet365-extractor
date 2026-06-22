@@ -256,10 +256,16 @@ describe("parseMatchFromLines", () => {
   });
 });
 
+function localClockFromIso(extractedAt) {
+  const d = new Date(extractedAt);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 describe("isLikelyWallClock", () => {
   it("detecta horário local coincidente com extractedAt", () => {
     const extractedAt = "2026-06-21T23:42:05.176Z";
-    assert.equal(isLikelyWallClock("20:42", extractedAt), true);
+    assert.equal(isLikelyWallClock(localClockFromIso(extractedAt), extractedAt), true);
     assert.equal(isLikelyWallClock("72:14", extractedAt), false);
     assert.equal(isLikelyWallClock("45:00", extractedAt), false);
   });
@@ -298,7 +304,12 @@ describe("mergeMatchCandidates", () => {
   it("remove relógio de parede do candidato vencedor", () => {
     const extractedAt = "2026-06-21T23:42:05.176Z";
     const match = mergeMatchCandidates(
-      { score: "2-1", scoreHome: 2, scoreAway: 1, clock: "20:42" },
+      {
+        score: "2-1",
+        scoreHome: 2,
+        scoreAway: 1,
+        clock: localClockFromIso(extractedAt),
+      },
       { extractedAt }
     );
 
