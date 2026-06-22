@@ -10,7 +10,8 @@
     "*://*.bet365.bet/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_title": "Bet365 Extractor",

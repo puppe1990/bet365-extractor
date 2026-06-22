@@ -75,19 +75,34 @@ async function createZipBlob(data) {
   return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
 }
 
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-
+function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
-    chrome.downloads.download(
-      { url, filename, saveAs: false },
-      (id) => {
-        URL.revokeObjectURL(url);
-        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-        else resolve(id);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const encoded = String(reader.result || "");
+      const base64 = encoded.split(",")[1];
+      if (!base64) {
+        reject(new Error("Falha ao ler ZIP"));
+        return;
       }
-    );
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error || new Error("Falha ao ler ZIP"));
+    reader.readAsDataURL(blob);
   });
+}
+
+async function downloadBlob(blob, filename) {
+  const zipBase64 = await blobToBase64(blob);
+  const response = await chrome.runtime.sendMessage({
+    type: "DOWNLOAD_ZIP",
+    zipBase64,
+    filename,
+  });
+  if (!response?.ok) {
+    throw new Error(response?.error || "Falha no download");
+  }
+  return response.filename || filename;
 }
 
 btnExtract.addEventListener("click", async () => {
@@ -101,7 +116,20 @@ btnExtract.addEventListener("click", async () => {
     const hint = urlHint(tab.url);
     if (hint) throw new Error(hint);
 
-    const response = await extractFromTab(tab.id);
+    const response = await Promise.race([
+      extractFromTab(tab.id),
+      new Promise((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Extração demorou demais (>45s) — recarregue a extensão e tente de novo"
+              )
+            ),
+          45_000
+        );
+      }),
+    ]);
 
     if (!response?.ok) {
       throw new Error(response?.error || "Falha na extração");
@@ -130,11 +158,18 @@ btnExtract.addEventListener("click", async () => {
     renderPreview(data);
 
     const blob = await createZipBlob(data);
-    const filename = buildZipFilename(data);
-    await downloadBlob(blob, filename);
+    const filename =
+      typeof buildZipFilename === "function"
+        ? buildZipFilename(data)
+        : typeof sanitizeDownloadFilename === "function"
+          ? sanitizeDownloadFilename(
+              `campeonato-jogo-${data?.match?.score ?? "sem-placar"}-${Date.now()}.zip`
+            )
+          : `bet365-extract-${Date.now()}.zip`;
+    const savedAs = await downloadBlob(blob, filename);
 
     if (hasOdds || hasStats || hasScore) {
-      setStatus(`ZIP baixado: ${filename}`, "ok");
+      setStatus(`ZIP baixado: ${savedAs}`, "ok");
     }
   } catch (err) {
     setStatus(err.message || String(err), "err");
