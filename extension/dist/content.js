@@ -2344,8 +2344,27 @@ const STATS_SUB_TAB_LABELS = [
   "Outros",
 ];
 
-const STATS_SUB_TAB_VISIT_BUDGET_MS = 8000;
-const STATS_SUB_TAB_CLICK_DELAY_MS = 200;
+const STATS_SUB_TAB_VISIT_BUDGET_MS = 12_000;
+const STATS_SUB_TAB_CLICK_DELAY_MS = 220;
+const STATS_SUB_TAB_LEAF_MAX_TEXT_LEN = 36;
+const STATS_SUB_TAB_SCROLL_FRACTIONS = [0, 0.33, 0.66, 1];
+
+const STATS_SUB_TAB_LEAF_SELECTORS = [
+  "[class*='StatsCategory'] *",
+  "[class*='MatchStats'] *",
+  "[class*='StatsRibbon'] *",
+  "[class*='StatsDetail'] *",
+  "[class*='SubNav'] *",
+  "[class*='LiteScoreboard'] *",
+  "[class*='HorizontalScroll'] [class*='Item']",
+  "[class*='Scroller'] [class*='Item']",
+  "[class*='LocationEventsMenu_Item']",
+  "[class*='EventsMenu'] *",
+  "button",
+  "[role='tab']",
+  "span",
+  "a",
+];
 
 function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, (ch) => `\\${ch}`);
@@ -2452,13 +2471,56 @@ function scoreStatsSubTabBarContainer(text) {
   return score;
 }
 
+function isGluedStatsSubTabContainer(text) {
+  const s = normalizeStatsSubTabLabel(text);
+  if (!s) return false;
+  if (STATS_SUB_TAB_PATTERNS.some((re) => re.test(s)) || OUTROS_TAB_RE.test(s)) return false;
+  return gluedStatsSubTabCount(s) > 1;
+}
+
+function isStatsSubTabLeafText(text) {
+  const s = normalizeStatsSubTabLabel(text);
+  if (!s || s.length > STATS_SUB_TAB_LEAF_MAX_TEXT_LEN) return false;
+  return Boolean(statsSubTabKey(s));
+}
+
 function leafStatsSubTabKey(text, childTexts = []) {
-  const key = statsSubTabKey(text);
-  if (!key) return null;
-  if (gluedStatsSubTabCount(text) > 1) return null;
+  const s = normalizeStatsSubTabLabel(text);
+  const key = statsSubTabKey(s);
+  if (!key || isGluedStatsSubTabContainer(s)) return null;
   const childKeys = childTexts.map((childText) => statsSubTabKey(childText)).filter(Boolean);
   if (childKeys.includes(key)) return null;
   return key;
+}
+
+function collectStatsSubTabCandidatesFromNodes(nodes, innerWidth = 1200) {
+  const candidates = [];
+  const seen = new Set();
+
+  for (const node of nodes) {
+    const text = normalizeStatsSubTabLabel(node.text);
+    const childTexts = (node.childTexts || []).map((childText) => normalizeStatsSubTabLabel(childText));
+    const label = leafStatsSubTabKey(text, childTexts);
+    if (!label) continue;
+    const key = STATS_SUB_TAB_KEYS[STATS_SUB_TAB_LABELS.indexOf(label)];
+    if (!key || seen.has(key)) continue;
+    const rect = node.rect;
+    if (!isInSidePanelTabBand(rect, innerWidth)) continue;
+    seen.add(key);
+    candidates.push({
+      key,
+      label,
+      area: (rect?.width || 0) * (rect?.height || 0),
+      el: node.el ?? null,
+    });
+  }
+
+  const byKey = new Map();
+  for (const tab of candidates) {
+    const prev = byKey.get(tab.key);
+    if (!prev || tab.area < prev.area) byKey.set(tab.key, tab);
+  }
+  return [...byKey.values()];
 }
 
 function mergeStatsSubTabTexts(textBySubTab = {}) {
@@ -3938,13 +4000,15 @@ function collectFrameWalkTexts() {
     }
   }
 
-  function scrollStatsSubTabBars(root) {
+  async function scrollStatsSubTabBars(root) {
     const bars = [];
     const scope = root || document.documentElement;
     walkElementsWithin(scope, (el) => {
       const cls = String(el.className || "");
       if (
-        /Classification|HorizontalScroll|StatsRibbon|StatsCategory|SubNav|Scroller/i.test(cls) &&
+        /Classification|HorizontalScroll|StatsRibbon|StatsCategory|SubNav|Scroller|StatsDetail|LiteScoreboard/i.test(
+          cls
+        ) &&
         el.scrollWidth > el.clientWidth + 8
       ) {
         bars.push(el);
@@ -3952,7 +4016,11 @@ function collectFrameWalkTexts() {
     });
     for (const bar of [...new Set(bars)]) {
       try {
-        bar.scrollLeft = bar.scrollWidth;
+        const maxScroll = Math.max(0, bar.scrollWidth - bar.clientWidth);
+        for (const fraction of STATS_SUB_TAB_SCROLL_FRACTIONS) {
+          bar.scrollLeft = Math.floor(maxScroll * fraction);
+          await delay(30);
+        }
       } catch (_) {}
     }
   }
@@ -3983,65 +4051,74 @@ function collectFrameWalkTexts() {
   }
 
   function collectStatsSubTabCandidates(root, fromTab = null) {
-    const candidates = [];
+    const nodes = [];
     const seen = new Set();
-    const scope = root;
-    if (!scope) return candidates;
+    const scopes = [];
+    const sideRoot = findSidePanelRoot(fromTab);
+    if (sideRoot) scopes.push(sideRoot);
+    if (root) scopes.push(root);
+    if (!scopes.length) return [];
 
-    const consider = (el) => {
+    const pushNode = (el) => {
       try {
-        const label = getLeafStatsSubTabKey(el);
+        const text = normalizeStatsSubTabLabel(el?.innerText || el?.textContent || "");
+        const childTexts = [...(el?.children || [])].map((child) =>
+          normalizeStatsSubTabLabel(child.innerText || child.textContent || "")
+        );
+        if (!isStatsSubTabLeafText(text) && !leafStatsSubTabKey(text, childTexts)) return;
+        if (String(el.innerText || "").length > 80) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 8 || rect.height < 4) return;
+        const label = leafStatsSubTabKey(text, childTexts) || statsSubTabKey(text);
         if (!label) return;
         const key = STATS_SUB_TAB_KEYS[STATS_SUB_TAB_LABELS.indexOf(label)];
-        if (!key || seen.has(key)) return;
-        const rect = el.getBoundingClientRect();
-        if (rect.width < 12 || rect.height < 6) return;
-        seen.add(key);
-        candidates.push({ el, key, label, area: rect.width * rect.height });
+        if (!key) return;
+        const dedupe = `${key}|${Math.round(rect.top)}|${Math.round(rect.left)}`;
+        if (seen.has(dedupe)) return;
+        seen.add(dedupe);
+        nodes.push({
+          el,
+          text,
+          childTexts,
+          rect: {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          },
+        });
       } catch (_) {}
     };
 
-    const containers = [];
-    walkElementsWithin(scope, (el) => {
-      const score = scoreStatsSubTabBarContainer(el.textContent || "");
-      if (score >= 5) containers.push({ el, score });
-    });
-    containers.sort((a, b) => b.score - a.score);
+    for (const scope of [...new Set(scopes)]) {
+      const containers = [];
+      walkElementsWithin(scope, (el) => {
+        const score = scoreStatsSubTabBarContainer(el.textContent || "");
+        if (score >= 3) containers.push({ el, score });
+      });
+      containers.sort((a, b) => b.score - a.score);
 
-    for (const { el } of containers.slice(0, 3)) {
-      walkElementsWithin(el, consider);
-      if (candidates.length >= STATS_SUB_TAB_KEYS.length) break;
-    }
+      for (const { el } of containers.slice(0, 4)) {
+        walkElementsWithin(el, pushNode);
+        if (nodes.length >= STATS_SUB_TAB_KEYS.length) break;
+      }
 
-    if (candidates.length < 3) {
-      const selectors = [
-        "[class*='StatsCategory'] *",
-        "[class*='MatchStats'] *",
-        "[class*='StatsRibbon'] *",
-        "[class*='SubNav'] *",
-        "[class*='LocationEventsMenu_Item']",
-        "[class*='EventsMenu'] *",
-        "[class*='HorizontalScroll'] [class*='Item']",
-        "button",
-        "[role='tab']",
-      ];
-      for (const sel of selectors) {
-        (scope.querySelectorAll ? scope.querySelectorAll(sel) : []).forEach(consider);
-        if (candidates.length >= STATS_SUB_TAB_KEYS.length) break;
+      if (nodes.length < STATS_SUB_TAB_KEYS.length) {
+        for (const sel of STATS_SUB_TAB_LEAF_SELECTORS) {
+          (scope.querySelectorAll ? scope.querySelectorAll(sel) : []).forEach(pushNode);
+          if (nodes.length >= STATS_SUB_TAB_KEYS.length) break;
+        }
+      }
+
+      if (nodes.length < STATS_SUB_TAB_KEYS.length) {
+        walkElementsWithin(scope, pushNode);
       }
     }
 
-    if (candidates.length < 3) {
-      const sideRoot = findSidePanelRoot(fromTab);
-      if (sideRoot) walkElementsWithin(sideRoot, consider);
-    }
-
-    const byKey = new Map();
-    candidates.forEach((tab) => {
-      const prev = byKey.get(tab.key);
-      if (!prev || tab.area < prev.area) byKey.set(tab.key, tab);
-    });
-    return [...byKey.values()];
+    return collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth).map((tab) => ({
+      ...tab,
+      el: tab.el,
+    }));
   }
 
   function collectSidePanelTabElements(labelRe) {
@@ -4157,17 +4234,15 @@ function collectFrameWalkTexts() {
       return { textBySubTab, subTabClicks, skipped: "market-ribbon-not-stats-panel" };
     }
 
-    scrollStatsSubTabBars(statsRoot);
+    const searchRoot = findSidePanelRoot(fromTab) || statsRoot;
+    await scrollStatsSubTabBars(searchRoot);
     let tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
 
     for (const key of STATS_SUB_TAB_KEYS) {
       if (Date.now() - startedAt > STATS_SUB_TAB_VISIT_BUDGET_MS) break;
+      await scrollStatsSubTabBars(searchRoot);
+      tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
       let tab = tabs.find((t) => t.key === key);
-      if (!tab) {
-        scrollStatsSubTabBars(statsRoot);
-        tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
-        tab = tabs.find((t) => t.key === key);
-      }
       if (!tab) continue;
       try {
         tab.el.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });

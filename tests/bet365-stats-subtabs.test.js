@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 
 import {
   STATS_SUB_TAB_KEYS,
+  collectStatsSubTabCandidatesFromNodes,
   extractStatsFromSubTabTexts,
+  isStatsSubTabLeafText,
   leafStatsSubTabKey,
   looksLikeLiveStatsPanelText,
   looksLikeMarketRibbonText,
@@ -78,12 +80,45 @@ describe("bet365 stats sub-tabs", () => {
     assert.equal(leafStatsSubTabKey("Chutes", []), "Chutes");
   });
 
+  it("ignora Gols da faixa de mercados e coleta sub-abas do painel direito", () => {
+    const picked = collectStatsSubTabCandidatesFromNodes(
+      [
+        { text: "Gols", rect: { top: 180, left: 180, width: 50, height: 22 } },
+        { text: "1º Tempo/2º Tempo", rect: { top: 180, left: 260, width: 120, height: 22 } },
+        {
+          text: "Marcadores",
+          rect: { top: 220, left: 900, width: 90, height: 22 },
+          childTexts: [],
+        },
+        { text: "Chutes", rect: { top: 220, left: 1000, width: 60, height: 22 }, childTexts: [] },
+        {
+          text: "Escanteios",
+          rect: { top: 220, left: 1080, width: 80, height: 22 },
+          childTexts: [],
+        },
+      ],
+      1200
+    );
+
+    assert.deepEqual(picked.map((t) => t.key).sort(), ["chutes", "escanteios", "marcadores"]);
+    assert.equal(isStatsSubTabLeafText("Gols"), true);
+    assert.equal(isStatsSubTabLeafText("Marcadores de Gol"), false);
+  });
+
   it("extrai stats da aba Chutes", () => {
     const textBySubTab = { chutes: readFixture("stats-subtab-chutes.txt") };
     const stats = extractStatsFromSubTabTexts(textBySubTab);
 
     assert.ok(stats.some((s) => s.label === "Chutes ao Gol" && s.home === "5" && s.away === "2"));
     assert.ok(stats.every((s) => s.subTab === "chutes"));
+  });
+
+  it("extrai stats da aba Escanteios", () => {
+    const textBySubTab = { escanteios: readFixture("stats-subtab-escanteios.txt") };
+    const stats = extractStatsFromSubTabTexts(textBySubTab);
+
+    assert.ok(stats.some((s) => s.label === "Escanteios" && s.home === "5" && s.away === "3"));
+    assert.ok(stats.every((s) => s.subTab === "escanteios"));
   });
 
   it("resume captura por sub-aba", () => {

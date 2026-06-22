@@ -162,13 +162,15 @@
     }
   }
 
-  function scrollStatsSubTabBars(root) {
+  async function scrollStatsSubTabBars(root) {
     const bars = [];
     const scope = root || document.documentElement;
     walkElementsWithin(scope, (el) => {
       const cls = String(el.className || "");
       if (
-        /Classification|HorizontalScroll|StatsRibbon|StatsCategory|SubNav|Scroller/i.test(cls) &&
+        /Classification|HorizontalScroll|StatsRibbon|StatsCategory|SubNav|Scroller|StatsDetail|LiteScoreboard/i.test(
+          cls
+        ) &&
         el.scrollWidth > el.clientWidth + 8
       ) {
         bars.push(el);
@@ -176,7 +178,11 @@
     });
     for (const bar of [...new Set(bars)]) {
       try {
-        bar.scrollLeft = bar.scrollWidth;
+        const maxScroll = Math.max(0, bar.scrollWidth - bar.clientWidth);
+        for (const fraction of STATS_SUB_TAB_SCROLL_FRACTIONS) {
+          bar.scrollLeft = Math.floor(maxScroll * fraction);
+          await delay(30);
+        }
       } catch (_) {}
     }
   }
@@ -207,65 +213,74 @@
   }
 
   function collectStatsSubTabCandidates(root, fromTab = null) {
-    const candidates = [];
+    const nodes = [];
     const seen = new Set();
-    const scope = root;
-    if (!scope) return candidates;
+    const scopes = [];
+    const sideRoot = findSidePanelRoot(fromTab);
+    if (sideRoot) scopes.push(sideRoot);
+    if (root) scopes.push(root);
+    if (!scopes.length) return [];
 
-    const consider = (el) => {
+    const pushNode = (el) => {
       try {
-        const label = getLeafStatsSubTabKey(el);
+        const text = normalizeStatsSubTabLabel(el?.innerText || el?.textContent || "");
+        const childTexts = [...(el?.children || [])].map((child) =>
+          normalizeStatsSubTabLabel(child.innerText || child.textContent || "")
+        );
+        if (!isStatsSubTabLeafText(text) && !leafStatsSubTabKey(text, childTexts)) return;
+        if (String(el.innerText || "").length > 80) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 8 || rect.height < 4) return;
+        const label = leafStatsSubTabKey(text, childTexts) || statsSubTabKey(text);
         if (!label) return;
         const key = STATS_SUB_TAB_KEYS[STATS_SUB_TAB_LABELS.indexOf(label)];
-        if (!key || seen.has(key)) return;
-        const rect = el.getBoundingClientRect();
-        if (rect.width < 12 || rect.height < 6) return;
-        seen.add(key);
-        candidates.push({ el, key, label, area: rect.width * rect.height });
+        if (!key) return;
+        const dedupe = `${key}|${Math.round(rect.top)}|${Math.round(rect.left)}`;
+        if (seen.has(dedupe)) return;
+        seen.add(dedupe);
+        nodes.push({
+          el,
+          text,
+          childTexts,
+          rect: {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          },
+        });
       } catch (_) {}
     };
 
-    const containers = [];
-    walkElementsWithin(scope, (el) => {
-      const score = scoreStatsSubTabBarContainer(el.textContent || "");
-      if (score >= 5) containers.push({ el, score });
-    });
-    containers.sort((a, b) => b.score - a.score);
+    for (const scope of [...new Set(scopes)]) {
+      const containers = [];
+      walkElementsWithin(scope, (el) => {
+        const score = scoreStatsSubTabBarContainer(el.textContent || "");
+        if (score >= 3) containers.push({ el, score });
+      });
+      containers.sort((a, b) => b.score - a.score);
 
-    for (const { el } of containers.slice(0, 3)) {
-      walkElementsWithin(el, consider);
-      if (candidates.length >= STATS_SUB_TAB_KEYS.length) break;
-    }
+      for (const { el } of containers.slice(0, 4)) {
+        walkElementsWithin(el, pushNode);
+        if (nodes.length >= STATS_SUB_TAB_KEYS.length) break;
+      }
 
-    if (candidates.length < 3) {
-      const selectors = [
-        "[class*='StatsCategory'] *",
-        "[class*='MatchStats'] *",
-        "[class*='StatsRibbon'] *",
-        "[class*='SubNav'] *",
-        "[class*='LocationEventsMenu_Item']",
-        "[class*='EventsMenu'] *",
-        "[class*='HorizontalScroll'] [class*='Item']",
-        "button",
-        "[role='tab']",
-      ];
-      for (const sel of selectors) {
-        (scope.querySelectorAll ? scope.querySelectorAll(sel) : []).forEach(consider);
-        if (candidates.length >= STATS_SUB_TAB_KEYS.length) break;
+      if (nodes.length < STATS_SUB_TAB_KEYS.length) {
+        for (const sel of STATS_SUB_TAB_LEAF_SELECTORS) {
+          (scope.querySelectorAll ? scope.querySelectorAll(sel) : []).forEach(pushNode);
+          if (nodes.length >= STATS_SUB_TAB_KEYS.length) break;
+        }
+      }
+
+      if (nodes.length < STATS_SUB_TAB_KEYS.length) {
+        walkElementsWithin(scope, pushNode);
       }
     }
 
-    if (candidates.length < 3) {
-      const sideRoot = findSidePanelRoot(fromTab);
-      if (sideRoot) walkElementsWithin(sideRoot, consider);
-    }
-
-    const byKey = new Map();
-    candidates.forEach((tab) => {
-      const prev = byKey.get(tab.key);
-      if (!prev || tab.area < prev.area) byKey.set(tab.key, tab);
-    });
-    return [...byKey.values()];
+    return collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth).map((tab) => ({
+      ...tab,
+      el: tab.el,
+    }));
   }
 
   function collectSidePanelTabElements(labelRe) {
@@ -381,17 +396,15 @@
       return { textBySubTab, subTabClicks, skipped: "market-ribbon-not-stats-panel" };
     }
 
-    scrollStatsSubTabBars(statsRoot);
+    const searchRoot = findSidePanelRoot(fromTab) || statsRoot;
+    await scrollStatsSubTabBars(searchRoot);
     let tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
 
     for (const key of STATS_SUB_TAB_KEYS) {
       if (Date.now() - startedAt > STATS_SUB_TAB_VISIT_BUDGET_MS) break;
+      await scrollStatsSubTabBars(searchRoot);
+      tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
       let tab = tabs.find((t) => t.key === key);
-      if (!tab) {
-        scrollStatsSubTabBars(statsRoot);
-        tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
-        tab = tabs.find((t) => t.key === key);
-      }
       if (!tab) continue;
       try {
         tab.el.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
