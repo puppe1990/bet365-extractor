@@ -103,7 +103,7 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /INJECT_SNIFFER/);
     assert.match(template, /collectSidePanelTexts/);
     assert.match(template, /collectStatsSubTabTexts/);
-    assert.match(template, /collectStatsSubTabTexts\(statsRoot, statsTab\)/);
+    assert.match(template, /collectStatsSubTabTexts\(statsRoot, statsTab,/);
     assert.match(template, /function collectStatsSubTabCandidates\(root, fromTab/);
     assert.match(template, /collectStatsSubTabCandidatesFromNodes/);
     assert.match(template, /STATS_SUB_TAB_LEAF_SELECTORS/);
@@ -128,8 +128,9 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /EventViewDetailScroller/);
     assert.match(template, /scrollIntoView/);
     assert.match(template, /SIDE_PANEL_TAB_KEYS/);
-    assert.match(template, /SIDE_PANEL_STATS_HARVEST_KEYS/);
+    assert.match(template, /SIDE_PANEL_VISIT_BUDGET_MS/);
     assert.match(template, /ingestSidePanelTabStats/);
+    assert.match(template, /sidePanelRemainingMs/);
     assert.match(template, /SIDE_PANEL_TAB_SCOPE_SELECTORS/);
     assert.match(template, /collectSidePanelTabElements/);
     assert.match(template, /getMarketTabsVisitList/);

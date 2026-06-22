@@ -2499,7 +2499,8 @@ const SIDE_PANEL_STATS_TAB_MAP = {
 };
 
 function looksLikeGoalScorersPanelText(text) {
-  return /Marcadores de Gols?|Marcadores\b/i.test(String(text || "")) && /['′]|\bxG\b/i.test(text);
+  const s = String(text || "");
+  return /Marcadores de Gols?/i.test(s) && s.length > 40;
 }
 
 function looksLikeLateralStatsPanelText(text) {
@@ -2523,8 +2524,14 @@ function ingestSidePanelTabStats(textByTab = {}, textBySubTab = {}, subTabClicks
   return { textBySubTab: out, subTabClicks: clicks };
 }
 
+function isStatsSubTabNodeInBand(rect, innerWidth, band = "strict") {
+  if (band === "none") return true;
+  if (band === "relaxed") return isInRelaxedSidePanelTabBand(rect, innerWidth);
+  return isInSidePanelTabBand(rect, innerWidth);
+}
+
 function collectStatsSubTabCandidatesFromNodes(nodes, innerWidth = 1200, options = {}) {
-  const requireBand = options.requireBand !== false;
+  const band = options.band || (options.requireBand === false ? "none" : "strict");
   const candidates = [];
   const seen = new Set();
 
@@ -2538,7 +2545,7 @@ function collectStatsSubTabCandidatesFromNodes(nodes, innerWidth = 1200, options
     const key = STATS_SUB_TAB_KEYS[STATS_SUB_TAB_LABELS.indexOf(label)];
     if (!key || seen.has(key)) continue;
     const rect = node.rect;
-    if (requireBand && !isInSidePanelTabBand(rect, innerWidth)) continue;
+    if (!isStatsSubTabNodeInBand(rect, innerWidth, band)) continue;
     seen.add(key);
     candidates.push({
       key,
@@ -2642,6 +2649,8 @@ const SIDE_PANEL_TAB_LABELS = {
 };
 
 const SIDE_PANEL_STATS_HARVEST_KEYS = ["goalScorers", "lateral"];
+const SIDE_PANEL_VISIT_BUDGET_MS = 18_000;
+const SIDE_PANEL_STATS_SUB_TAB_BUDGET_MS = 5_000;
 
 const PLAYER_SHORT_NAME_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;
 const PLAYER_FULL_NAME_RE = /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;
@@ -3606,6 +3615,7 @@ const SIDE_PANEL_TAB_LABEL_PATTERNS = {
 };
 
 const SIDE_PANEL_TAB_BAND_LEFT_RATIO = 0.4;
+const SIDE_PANEL_TAB_BAND_RELAXED_LEFT_RATIO = 0.35;
 const SIDE_PANEL_TAB_BAND_RIGHT_RATIO = 0.98;
 
 function normalizeSidePanelTabLabel(text) {
@@ -3624,12 +3634,16 @@ function sidePanelTabKeyFromText(text) {
   return null;
 }
 
-function isInSidePanelTabBand(rect, innerWidth = 1200) {
+function isInSidePanelTabBand(rect, innerWidth = 1200, leftRatio = SIDE_PANEL_TAB_BAND_LEFT_RATIO) {
   if (!rect || rect.width < 10 || rect.height < 6) return false;
   return (
-    rect.left >= innerWidth * SIDE_PANEL_TAB_BAND_LEFT_RATIO &&
+    rect.left >= innerWidth * leftRatio &&
     rect.left <= innerWidth * SIDE_PANEL_TAB_BAND_RIGHT_RATIO
   );
+}
+
+function isInRelaxedSidePanelTabBand(rect, innerWidth = 1200) {
+  return isInSidePanelTabBand(rect, innerWidth, SIDE_PANEL_TAB_BAND_RELAXED_LEFT_RATIO);
 }
 
 const SIDE_PANEL_DISCOVERY_LABELS = [
@@ -4178,11 +4192,9 @@ function collectFrameWalkTexts() {
       }
     }
 
-    let picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth);
+    let picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth, { band: "strict" });
     if (!picked.length) {
-      picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth, {
-        requireBand: false,
-      });
+      picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth, { band: "relaxed" });
     }
     return picked.map((tab) => ({
       ...tab,
@@ -4289,12 +4301,13 @@ function collectFrameWalkTexts() {
     return "";
   }
 
-  async function collectStatsSubTabTexts(statsRoot, fromTab = null) {
+  async function collectStatsSubTabTexts(statsRoot, fromTab = null, options = {}) {
     const textBySubTab = {};
     const subTabClicks = {};
     const startedAt = Date.now();
+    const budgetMs = options.budgetMs ?? STATS_SUB_TAB_VISIT_BUDGET_MS;
 
-    if (!statsRoot) {
+    if (!statsRoot || budgetMs <= 0) {
       return { textBySubTab, subTabClicks, skipped: "no-live-stats-panel" };
     }
 
@@ -4308,7 +4321,7 @@ function collectFrameWalkTexts() {
     let tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
 
     for (const key of STATS_SUB_TAB_KEYS) {
-      if (Date.now() - startedAt > STATS_SUB_TAB_VISIT_BUDGET_MS) break;
+      if (Date.now() - startedAt > budgetMs) break;
       await scrollStatsSubTabBars(searchRoot);
       tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
       let tab = tabs.find((t) => t.key === key);
@@ -4334,18 +4347,6 @@ function collectFrameWalkTexts() {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function mergeHarvestedStatsSubTabs(textBySubTab, subTabClicks, tab) {
-    if (!tab) return;
-    const tabRoot = findLiveStatsPanelRoot(tab) || findSidePanelRoot(tab);
-    const harvested = await collectStatsSubTabTexts(tabRoot, tab);
-    for (const [key, value] of Object.entries(harvested.textBySubTab)) {
-      if (value && !textBySubTab[key]) textBySubTab[key] = value;
-    }
-    for (const [key, clicked] of Object.entries(harvested.subTabClicks)) {
-      if (clicked) subTabClicks[key] = true;
-    }
-  }
-
   async function collectSidePanelTexts() {
     const textByTab = {};
     const tabClicks = {};
@@ -4353,28 +4354,38 @@ function collectFrameWalkTexts() {
     const textBySubTab = {};
     const subTabClicks = {};
     let statsSubTabsSkipped = null;
+    const sidePanelStartedAt = Date.now();
+    const sidePanelRemainingMs = () =>
+      Math.max(0, SIDE_PANEL_VISIT_BUDGET_MS - (Date.now() - sidePanelStartedAt));
 
     const statsTab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS.stats);
     tabClicks.stats = Boolean(statsTab);
-    if (statsTab) await delay(250);
+    if (statsTab) await delay(180);
 
     const statsRoot = findLiveStatsPanelRoot(statsTab) || findSidePanelRoot(statsTab);
-    const initialSubTabs = await collectStatsSubTabTexts(statsRoot, statsTab);
-    Object.assign(textBySubTab, initialSubTabs.textBySubTab);
-    Object.assign(subTabClicks, initialSubTabs.subTabClicks);
-    statsSubTabsSkipped = initialSubTabs.skipped;
+    const subTabBudget = Math.min(
+      SIDE_PANEL_STATS_SUB_TAB_BUDGET_MS,
+      Math.max(0, sidePanelRemainingMs() - 4000)
+    );
+    if (subTabBudget > 800) {
+      const initialSubTabs = await collectStatsSubTabTexts(statsRoot, statsTab, {
+        budgetMs: subTabBudget,
+      });
+      Object.assign(textBySubTab, initialSubTabs.textBySubTab);
+      Object.assign(subTabClicks, initialSubTabs.subTabClicks);
+      statsSubTabsSkipped = initialSubTabs.skipped;
+    }
 
     textByTab.stats = mergeSidePanelTabText(getSidePanelText(statsTab), fullText, "stats");
 
     for (const key of SIDE_PANEL_TAB_KEYS) {
       if (key === "stats") continue;
+      const essential = key === "timeline" || key === "lineup" || key === "playerStats";
+      if (!essential && sidePanelRemainingMs() < 600) continue;
       const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key]);
       tabClicks[key] = Boolean(tab);
-      if (tab) await delay(250);
+      if (tab) await delay(essential ? 180 : 120);
       textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
-      if (SIDE_PANEL_STATS_HARVEST_KEYS.includes(key)) {
-        await mergeHarvestedStatsSubTabs(textBySubTab, subTabClicks, tab);
-      }
     }
 
     const ingested = ingestSidePanelTabStats(textByTab, textBySubTab, subTabClicks);
@@ -4385,6 +4396,8 @@ function collectFrameWalkTexts() {
     textByTab.statsSubTabClicks = subTabClicks;
     textByTab.statsSubTabMerged = mergeStatsSubTabTexts(textBySubTab);
     textByTab.statsSubTabCapture = summarizeStatsSubTabCapture(textBySubTab, subTabClicks);
+
+    clickSidePanelTab(SIDE_PANEL_TAB_LABELS.stats);
 
     return { textByTab, tabClicks, statsSubTabClicks: subTabClicks, statsSubTabsSkipped };
   }

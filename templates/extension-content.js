@@ -277,11 +277,11 @@
       }
     }
 
-    let picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth);
+    let picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth, {
+      band: "strict",
+    });
     if (!picked.length) {
-      picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth, {
-        requireBand: false,
-      });
+      picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth, { band: "relaxed" });
     }
     return picked.map((tab) => ({
       ...tab,
@@ -388,12 +388,13 @@
     return "";
   }
 
-  async function collectStatsSubTabTexts(statsRoot, fromTab = null) {
+  async function collectStatsSubTabTexts(statsRoot, fromTab = null, options = {}) {
     const textBySubTab = {};
     const subTabClicks = {};
     const startedAt = Date.now();
+    const budgetMs = options.budgetMs ?? STATS_SUB_TAB_VISIT_BUDGET_MS;
 
-    if (!statsRoot) {
+    if (!statsRoot || budgetMs <= 0) {
       return { textBySubTab, subTabClicks, skipped: "no-live-stats-panel" };
     }
 
@@ -407,7 +408,7 @@
     let tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
 
     for (const key of STATS_SUB_TAB_KEYS) {
-      if (Date.now() - startedAt > STATS_SUB_TAB_VISIT_BUDGET_MS) break;
+      if (Date.now() - startedAt > budgetMs) break;
       await scrollStatsSubTabBars(searchRoot);
       tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
       let tab = tabs.find((t) => t.key === key);
@@ -433,18 +434,6 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function mergeHarvestedStatsSubTabs(textBySubTab, subTabClicks, tab) {
-    if (!tab) return;
-    const tabRoot = findLiveStatsPanelRoot(tab) || findSidePanelRoot(tab);
-    const harvested = await collectStatsSubTabTexts(tabRoot, tab);
-    for (const [key, value] of Object.entries(harvested.textBySubTab)) {
-      if (value && !textBySubTab[key]) textBySubTab[key] = value;
-    }
-    for (const [key, clicked] of Object.entries(harvested.subTabClicks)) {
-      if (clicked) subTabClicks[key] = true;
-    }
-  }
-
   async function collectSidePanelTexts() {
     const textByTab = {};
     const tabClicks = {};
@@ -452,28 +441,38 @@
     const textBySubTab = {};
     const subTabClicks = {};
     let statsSubTabsSkipped = null;
+    const sidePanelStartedAt = Date.now();
+    const sidePanelRemainingMs = () =>
+      Math.max(0, SIDE_PANEL_VISIT_BUDGET_MS - (Date.now() - sidePanelStartedAt));
 
     const statsTab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS.stats);
     tabClicks.stats = Boolean(statsTab);
-    if (statsTab) await delay(250);
+    if (statsTab) await delay(180);
 
     const statsRoot = findLiveStatsPanelRoot(statsTab) || findSidePanelRoot(statsTab);
-    const initialSubTabs = await collectStatsSubTabTexts(statsRoot, statsTab);
-    Object.assign(textBySubTab, initialSubTabs.textBySubTab);
-    Object.assign(subTabClicks, initialSubTabs.subTabClicks);
-    statsSubTabsSkipped = initialSubTabs.skipped;
+    const subTabBudget = Math.min(
+      SIDE_PANEL_STATS_SUB_TAB_BUDGET_MS,
+      Math.max(0, sidePanelRemainingMs() - 4000)
+    );
+    if (subTabBudget > 800) {
+      const initialSubTabs = await collectStatsSubTabTexts(statsRoot, statsTab, {
+        budgetMs: subTabBudget,
+      });
+      Object.assign(textBySubTab, initialSubTabs.textBySubTab);
+      Object.assign(subTabClicks, initialSubTabs.subTabClicks);
+      statsSubTabsSkipped = initialSubTabs.skipped;
+    }
 
     textByTab.stats = mergeSidePanelTabText(getSidePanelText(statsTab), fullText, "stats");
 
     for (const key of SIDE_PANEL_TAB_KEYS) {
       if (key === "stats") continue;
+      const essential = key === "timeline" || key === "lineup" || key === "playerStats";
+      if (!essential && sidePanelRemainingMs() < 600) continue;
       const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key]);
       tabClicks[key] = Boolean(tab);
-      if (tab) await delay(250);
+      if (tab) await delay(essential ? 180 : 120);
       textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
-      if (SIDE_PANEL_STATS_HARVEST_KEYS.includes(key)) {
-        await mergeHarvestedStatsSubTabs(textBySubTab, subTabClicks, tab);
-      }
     }
 
     const ingested = ingestSidePanelTabStats(textByTab, textBySubTab, subTabClicks);
@@ -484,6 +483,8 @@
     textByTab.statsSubTabClicks = subTabClicks;
     textByTab.statsSubTabMerged = mergeStatsSubTabTexts(textBySubTab);
     textByTab.statsSubTabCapture = summarizeStatsSubTabCapture(textBySubTab, subTabClicks);
+
+    clickSidePanelTab(SIDE_PANEL_TAB_LABELS.stats);
 
     return { textByTab, tabClicks, statsSubTabClicks: subTabClicks, statsSubTabsSkipped };
   }

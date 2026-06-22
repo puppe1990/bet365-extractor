@@ -143,21 +143,18 @@ describe("bet365 stats sub-tabs", () => {
     assert.match(merged, /Marcadores[\s\S]*---STATS-SUBTAB---[\s\S]*Chutes/);
   });
 
-  it("coleta sub-abas sem filtro de faixa quando band está desligado", () => {
-    const picked = collectStatsSubTabCandidatesFromNodes(
-      [
-        {
-          text: "Escanteios",
-          rect: { top: 260, left: 520, width: 80, height: 22 },
-          childTexts: [],
-        },
-      ],
-      1200,
-      { requireBand: false }
-    );
+  it("coleta sub-abas com faixa relaxada do painel direito", () => {
+    const node = {
+      text: "Escanteios",
+      rect: { top: 260, left: 430, width: 80, height: 22 },
+      childTexts: [],
+    };
+    const strict = collectStatsSubTabCandidatesFromNodes([node], 1200, { band: "strict" });
+    const relaxed = collectStatsSubTabCandidatesFromNodes([node], 1200, { band: "relaxed" });
 
+    assert.deepEqual(strict, []);
     assert.deepEqual(
-      picked.map((t) => t.key),
+      relaxed.map((t) => t.key),
       ["escanteios"]
     );
   });

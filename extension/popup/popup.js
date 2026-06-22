@@ -124,9 +124,9 @@ btnExtract.addEventListener("click", async () => {
         setTimeout(
           () =>
             reject(
-              new Error("Extração demorou demais (>45s) — recarregue a extensão e tente de novo")
+              new Error("Extração demorou demais (>75s) — recarregue a extensão e tente de novo")
             ),
-          45_000
+          75_000
         );
       }),
     ]);
