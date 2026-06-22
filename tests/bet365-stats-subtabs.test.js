@@ -11,7 +11,9 @@ import {
   looksLikeLiveStatsPanelText,
   looksLikeMarketRibbonText,
   mergeStatsSubTabTexts,
+  scoreLiveStatsPanelRootText,
   scoreStatsSubTabBarContainer,
+  shouldTreatAsMarketRibbonNotStats,
   statsSubTabKey,
   summarizeStatsSubTabCapture,
 } from "../lib/bet365-stats-subtabs.js";
@@ -33,6 +35,18 @@ describe("bet365 stats sub-tabs", () => {
       assert.equal(statsSubTabKey(tab), tab);
     }
     assert.equal(statsSubTabKey("Outr ›"), "Outros");
+  });
+
+  it("não confunde módulo in-play misto com faixa de mercados", () => {
+    const mixed = [
+      "Copa do Mundo 2026 França v Iraque Popular Criar Aposta Instantâneas Escanteios/Cartões Gols",
+      "Estat. Cronologia Escalação Tabela 0.10 xG Ataques 16 15 Ataques Perigosos 9 2 % de Posse 63 37",
+      "Marcadores Chutes Cartões/Faltas Escanteios Gols",
+    ].join("\n");
+
+    assert.equal(shouldTreatAsMarketRibbonNotStats(mixed), false);
+    assert.equal(looksLikeMarketRibbonText(mixed), false);
+    assert.ok(scoreLiveStatsPanelRootText(mixed) >= 12);
   });
 
   it("rejeita faixa de mercados de jogador na coluna esquerda", () => {

@@ -11,6 +11,7 @@ import {
   isInLeftMarketColumn,
   isInMarketTabBand,
   isMarketCategoryTabLabel,
+  isMarketTabLeafText,
   isPlayerMarketTabKey,
   leafMarketTabKey,
   marketCategoryTabKey,
@@ -91,8 +92,8 @@ describe("bet365 market category tabs", () => {
       true
     );
     assert.equal(
-      isInMarketTabBand({ top: 420, left: 120, width: 60, height: 24 }, 900, 1200, "live"),
-      false
+      isInMarketTabBand({ top: 480, left: 120, width: 60, height: 24 }, 900, 1200, "live"),
+      true
     );
     assert.equal(
       isInMarketTabBand({ top: 450, left: 120, width: 60, height: 24 }, 1200, 1400, "live"),
@@ -103,7 +104,32 @@ describe("bet365 market category tabs", () => {
       true
     );
     assert.equal(isInLeftMarketColumn({ top: 120, left: 120, width: 60, height: 24 }, 1200), true);
-    assert.equal(isInLeftMarketColumn({ top: 120, left: 900, width: 60, height: 24 }, 1200), false);
+    assert.equal(isInLeftMarketColumn({ top: 120, left: 980, width: 60, height: 24 }, 1200), false);
+  });
+
+  it("aceita folha curta e container colado da faixa in-play", () => {
+    assert.equal(isMarketTabLeafText("Escanteios/Cartões"), true);
+    assert.equal(isMarketTabLeafText("Popular Instantâneas Gols"), false);
+
+    const containerRects = [{ score: 6, rect: { top: 500, left: 40, bottom: 560, right: 900 } }];
+    const picked = collectMarketTabCandidates(
+      [
+        {
+          text: "Escanteios/Cartões",
+          rect: { top: 520, left: 320, width: 120, height: 24, bottom: 544, right: 440 },
+        },
+        {
+          text: "Popular",
+          rect: { top: 520, left: 120, width: 70, height: 24, bottom: 544, right: 190 },
+        },
+      ],
+      900,
+      1200,
+      "live",
+      containerRects
+    );
+
+    assert.deepEqual(picked.map((t) => t.label).sort(), ["Escanteios/Cartões", "Popular"]);
   });
 
   it("coleta abas na coluna esquerda e ignora painel lateral", () => {

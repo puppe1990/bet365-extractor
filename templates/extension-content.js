@@ -185,27 +185,19 @@
     const roots = [];
     if (fromTab) {
       let node = fromTab;
-      for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+      for (let depth = 0; node && depth < 12; depth++, node = node.parentElement) {
         roots.push(node);
       }
     }
 
-    [
-      "[class*='MatchLiveStats']",
-      "[class*='SimpleMatchStats']",
-      "[class*='StatsGraph']",
-      "[class*='MatchLiveModule']",
-      "[class*='InPlayModule']",
-      "[class*='StatsModule']",
-    ].forEach((sel) => queryDeep(sel).forEach((el) => roots.push(el)));
+    LIVE_STATS_PANEL_SCOPE_SELECTORS.forEach((sel) =>
+      queryDeep(sel).forEach((el) => roots.push(el))
+    );
 
     let best = null;
     let bestScore = 0;
     for (const el of [...new Set(roots)]) {
-      const text = el.innerText || "";
-      if (looksLikeMarketRibbonText(text)) continue;
-      if (!looksLikeLiveStatsPanelText(text)) continue;
-      const score = scoreStatsSubTabBarContainer(text);
+      const score = scoreLiveStatsPanelRootText(el.innerText || "");
       if (score > bestScore) {
         bestScore = score;
         best = el;
@@ -261,6 +253,11 @@
         (scope.querySelectorAll ? scope.querySelectorAll(sel) : []).forEach(consider);
         if (candidates.length >= STATS_SUB_TAB_KEYS.length) break;
       }
+    }
+
+    if (candidates.length < 3) {
+      const sideRoot = findSidePanelRoot(fromTab);
+      if (sideRoot) walkElementsWithin(sideRoot, consider);
     }
 
     const byKey = new Map();
@@ -380,7 +377,7 @@
     }
 
     const panelText = statsRoot.innerText || "";
-    if (looksLikeMarketRibbonText(panelText) || !looksLikeLiveStatsPanelText(panelText)) {
+    if (!looksLikeLiveStatsPanelText(panelText) || shouldTreatAsMarketRibbonNotStats(panelText)) {
       return { textBySubTab, subTabClicks, skipped: "market-ribbon-not-stats-panel" };
     }
 
@@ -426,7 +423,7 @@
     tabClicks.stats = Boolean(statsTab);
     if (statsTab) await delay(250);
 
-    const statsRoot = findLiveStatsPanelRoot(statsTab);
+    const statsRoot = findLiveStatsPanelRoot(statsTab) || findSidePanelRoot(statsTab);
     const {
       textBySubTab,
       subTabClicks,
@@ -578,16 +575,21 @@
     const visitList = getMarketTabsVisitList();
     const nodes = [];
     const seen = new Set();
+    const containerRects = [];
 
     const pushNode = (el) => {
       try {
         const text = normalizeLeafText(el);
         const childTexts = [...(el?.children || [])].map((child) => normalizeLeafText(child));
-        const key = leafMarketTabKey(text, childTexts);
-        if (!key || seen.has(key)) return;
+        if (!isMarketTabLeafText(text) && !leafMarketTabKey(text, childTexts)) return;
+        if (String(el.innerText || "").length > 80) return;
         const rect = el.getBoundingClientRect();
-        if (!isInMarketTabBand(rect, window.innerHeight, window.innerWidth, pageMode)) return;
-        seen.add(key);
+        if (rect.width < 8 || rect.height < 4) return;
+        const label = marketCategoryTabKey(text) || leafMarketTabKey(text, childTexts);
+        if (!label) return;
+        const dedupe = `${label}|${Math.round(rect.top)}|${Math.round(rect.left)}`;
+        if (seen.has(dedupe)) return;
+        seen.add(dedupe);
         nodes.push({
           el,
           text,
@@ -597,6 +599,8 @@
             left: rect.left,
             width: rect.width,
             height: rect.height,
+            bottom: rect.bottom,
+            right: rect.right,
           },
         });
       } catch (_) {}
@@ -606,12 +610,26 @@
     MARKET_TAB_CONTAINER_SELECTORS.forEach((sel) => {
       queryDeep(sel).forEach((el) => {
         const score = scoreMarketTabBarContainer(el.textContent || "");
-        if (score >= 4) containers.push({ el, score });
+        if (score >= 3) {
+          containers.push({ el, score });
+          try {
+            const rect = el.getBoundingClientRect();
+            containerRects.push({
+              score,
+              rect: {
+                top: rect.top,
+                left: rect.left,
+                bottom: rect.bottom,
+                right: rect.right,
+              },
+            });
+          } catch (_) {}
+        }
       });
     });
     containers.sort((a, b) => b.score - a.score);
 
-    for (const { el } of containers.slice(0, 4)) {
+    for (const { el } of containers.slice(0, 6)) {
       walkTabContainer(el, pushNode);
       if (nodes.length >= visitList.length) break;
     }
@@ -623,9 +641,13 @@
       }
     }
 
-    return collectMarketTabCandidates(nodes, window.innerHeight, window.innerWidth, pageMode).map(
-      (tab) => ({ ...tab, el: tab.el })
-    );
+    return collectMarketTabCandidates(
+      nodes,
+      window.innerHeight,
+      window.innerWidth,
+      pageMode,
+      containerRects
+    ).map((tab) => ({ ...tab, el: tab.el }));
   }
 
   async function scrollMarketTabBars() {

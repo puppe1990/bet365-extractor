@@ -44,6 +44,17 @@ describe("parseTimelineFromText", () => {
     assert.equal(events.length, 0);
   });
 
+  it("ignora categoria de mercado vazando como escanteio na cronologia", () => {
+    const events = parseTimelineFromText(
+      "Cronologia\n11'\n1º Tempo - Escanteios\n7'\n1° Cartão Amarelo\n"
+    );
+
+    assert.equal(events.length, 1);
+    assert.equal(events[0].minute, 7);
+    assert.equal(events[0].type, "card");
+    assert.ok(!events.some((e) => e.type === "corner"));
+  });
+
   it("ignora odds e nomes de jogador da coluna esquerda", () => {
     const events = parseTimelineFromText(readFixture("side-panel-timeline-noise.txt"));
 

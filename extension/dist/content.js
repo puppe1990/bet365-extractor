@@ -2116,14 +2116,16 @@ const PREMATCH_MARKET_TABS_VISIT = [
 
 const MARKET_TAB_VISIT_BUDGET_MS = 10_000;
 const MARKET_TAB_CLICK_DELAY_MS = 280;
-const MARKET_TAB_BAND_TOP_PX = 480;
-const MARKET_TAB_BAND_TOP_RATIO = 0.42;
-const PREMATCH_MARKET_TAB_BAND_TOP_PX = 560;
-const PREMATCH_MARKET_TAB_BAND_TOP_RATIO = 0.58;
-const MARKET_TAB_LEFT_COLUMN_RATIO = 0.62;
+const MARKET_TAB_BAND_TOP_PX = 560;
+const MARKET_TAB_BAND_TOP_RATIO = 0.55;
+const PREMATCH_MARKET_TAB_BAND_TOP_PX = 600;
+const PREMATCH_MARKET_TAB_BAND_TOP_RATIO = 0.62;
+const MARKET_TAB_LEFT_COLUMN_RATIO = 0.78;
+const MARKET_TAB_LEAF_MAX_TEXT_LEN = 40;
 
 const MARKET_TAB_CONTAINER_SELECTORS = [
   "[class*='Classification']",
+  "[class*='ClassificationRibbon']",
   "[class*='Ribbon']",
   "[class*='MarketFilter']",
   "[class*='CouponClassification']",
@@ -2131,15 +2133,24 @@ const MARKET_TAB_CONTAINER_SELECTORS = [
   "[class*='MarketCoupon']",
   "[class*='SlideScroller']",
   "[class*='FilterBar']",
+  "[class*='InPlay']",
+  "[class*='EventView']",
+  "[class*='ipe-']",
+  "[class*='ovm-']",
 ];
 
 const MARKET_TAB_LEAF_SELECTORS = [
+  "[class*='Classification'] [class*='Item']",
+  "[class*='ClassificationRibbon'] *",
   "[class*='Scroller'] [class*='Item']",
   "[class*='Scroller'] button",
   "[class*='Scroller'] [role='tab']",
   "[class*='Classification'] *",
+  "[class*='HorizontalScroll'] *",
   "button",
   "[role='tab']",
+  "span",
+  "a",
 ];
 
 function escapeRegExp(text) {
@@ -2169,7 +2180,9 @@ function marketCategoryTabKey(text) {
 }
 
 function resolveMarketTabPageMode(pageUrl = "") {
-  const hash = String(pageUrl).includes("#") ? String(pageUrl).split("#")[1] || "" : String(pageUrl);
+  const hash = String(pageUrl).includes("#")
+    ? String(pageUrl).split("#")[1] || ""
+    : String(pageUrl);
   if (/#\/IP\/EV\d+/i.test(`#${hash}`) || /EV\d{8,}/i.test(hash)) return "live";
   if (/\/E\d{6,}\b/i.test(hash)) return "prematch";
   return "auto";
@@ -2220,7 +2233,30 @@ function scoreMarketTabBarContainer(text) {
   if (/Jogador/i.test(text)) score += 2;
   if (/Gols/i.test(text)) score += 1;
   if (/Instant/i.test(text)) score += 1;
+  if (/Escanteios\/Cartões/i.test(text)) score += 2;
+  if (/Criar Aposta/i.test(text)) score += 1;
   return score;
+}
+
+function isMarketTabLeafText(text) {
+  const s = normalizeMarketTabLabel(text);
+  if (!s || s.length > MARKET_TAB_LEAF_MAX_TEXT_LEN) return false;
+  return Boolean(marketCategoryTabKey(s));
+}
+
+function isInsideScoredMarketTabContainer(rect, containerRects = []) {
+  if (!rect || !containerRects.length) return false;
+  return containerRects.some((container) => {
+    if (!container || container.score < 4) return false;
+    const c = container.rect;
+    if (!c) return false;
+    return (
+      rect.top >= c.top - 12 &&
+      rect.bottom <= c.bottom + 12 &&
+      rect.left >= c.left - 12 &&
+      rect.right <= c.right + 12
+    );
+  });
 }
 
 function leafMarketTabKey(text, childTexts = []) {
@@ -2240,19 +2276,31 @@ function pickSmallestTabCandidates(candidates) {
   return [...byLabel.values()];
 }
 
-function collectMarketTabCandidates(nodes, innerHeight = 800, innerWidth = 1200, pageMode = "auto") {
+function collectMarketTabCandidates(
+  nodes,
+  innerHeight = 800,
+  innerWidth = 1200,
+  pageMode = "auto",
+  containerRects = []
+) {
   const candidates = [];
   const seen = new Set();
 
   for (const node of nodes) {
     const text = normalizeMarketTabLabel(node.text);
-    const key = leafMarketTabKey(
-      text,
-      (node.childTexts || []).map((childText) => normalizeMarketTabLabel(childText))
+    const childTexts = (node.childTexts || []).map((childText) =>
+      normalizeMarketTabLabel(childText)
     );
+    let key = leafMarketTabKey(text, childTexts);
+    if (!key && isMarketTabLeafText(text) && !childTexts.some((childText) => marketCategoryTabKey(childText))) {
+      key = marketCategoryTabKey(text);
+    }
     if (!key || seen.has(key)) continue;
     const rect = node.rect;
-    if (!isInMarketTabBand(rect, innerHeight, innerWidth, pageMode)) continue;
+    const inBand =
+      isInMarketTabBand(rect, innerHeight, innerWidth, pageMode) ||
+      isInsideScoredMarketTabContainer(rect, containerRects);
+    if (!inBand) continue;
     seen.add(key);
     candidates.push({
       label: key,
@@ -2311,12 +2359,47 @@ const LIVE_STATS_SIGNAL_RE =
 const MARKET_RIBBON_SIGNAL_RE =
   /Popular|Criar Aposta|Jogador a Marcar|Odds Asiáticas|Ver por|Mercado\b|Jogador \/ Últimos|SUBSTITUIÇÃO\+/i;
 
+const LIVE_STATS_PANEL_SCOPE_SELECTORS = [
+  "[class*='MatchLiveStats']",
+  "[class*='SimpleMatchStats']",
+  "[class*='StatsGraph']",
+  "[class*='LiteScoreboard']",
+  "[class*='Scoreboard']",
+  "[class*='MatchLiveModule']",
+  "[class*='InPlayModule']",
+  "[class*='StatsModule']",
+  "[class*='ParticipantStats']",
+  "[class*='MediaStats']",
+];
+
 function looksLikeLiveStatsPanelText(text) {
   return LIVE_STATS_SIGNAL_RE.test(String(text || ""));
 }
 
+function shouldTreatAsMarketRibbonNotStats(text) {
+  const s = String(text || "");
+  if (!MARKET_RIBBON_SIGNAL_RE.test(s)) return false;
+  if (!looksLikeLiveStatsPanelText(s)) return true;
+  if (gluedStatsSubTabCount(s) >= 3) return false;
+  if (/Estat\.|Cronologia|Escalação|Tabela/i.test(s) && !/Jogador a Marcar ou Dar Assistência/i.test(s)) {
+    return false;
+  }
+  if (/Ataques Perigosos|% de Posse|Finalizações\s*\/\s*Chutes ao Gol/i.test(s)) return false;
+  return true;
+}
+
 function looksLikeMarketRibbonText(text) {
-  return MARKET_RIBBON_SIGNAL_RE.test(String(text || ""));
+  return shouldTreatAsMarketRibbonNotStats(text);
+}
+
+function scoreLiveStatsPanelRootText(text) {
+  const s = String(text || "");
+  if (!looksLikeLiveStatsPanelText(s)) return 0;
+  if (shouldTreatAsMarketRibbonNotStats(s)) return 0;
+  let score = 12 + scoreStatsSubTabBarContainer(s);
+  if (/Estat\.|Tabela/i.test(s)) score += 4;
+  if (/Marcadores|Escanteios|Cartões\/Faltas/i.test(s)) score += 2;
+  return score;
 }
 
 function normalizeStatsSubTabLabel(text) {
@@ -2349,7 +2432,7 @@ function gluedStatsSubTabCount(text) {
 
 function scoreStatsSubTabBarContainer(text) {
   const s = String(text || "");
-  if (looksLikeMarketRibbonText(s)) return 0;
+  if (shouldTreatAsMarketRibbonNotStats(s)) return 0;
   if (!looksLikeLiveStatsPanelText(s)) return 0;
 
   const count = gluedStatsSubTabCount(s);
@@ -2552,6 +2635,15 @@ function isTimelineNoiseDetail(line) {
   }
   if (/^(Encontro\s*-|N[uú]mero de|Nº\s*Escanteios|Escanteios\s*-)/i.test(s)) return true;
   if (/^Escanteios\s*\/\s*Cart[oõ]es$/i.test(s)) return true;
+  if (/^\d+º\s*Tempo\s*[-/]\s*Escanteios$/i.test(s)) return true;
+  if (/^1º\s*Tempo\s*-\s*Escanteios$/i.test(s)) return true;
+  if (
+    /^(Popular|Instantâneas|Escanteios\/Cartões|Gols|1º Tempo\/2º Tempo|Jogador|Especiais|Odds Asiáticas|Criar Aposta)$/i.test(
+      s
+    )
+  ) {
+    return true;
+  }
   if (
     /^(xG|Ataques Perigosos|Ataques|% de Posse|Passes Chave|Goleiro - Defesas|Precisão dos Passes|Cruzamentos|Finalizações\s*\/\s*Chutes ao Gol)$/i.test(
       s
@@ -3422,9 +3514,8 @@ const SIDE_PANEL_DISCOVERY_LABELS = [
 function gluedSidePanelTabCount(text) {
   const s = normalizeSidePanelTabLabel(text);
   if (!s) return 0;
-  return SIDE_PANEL_DISCOVERY_LABELS.filter((label) =>
-    new RegExp(escapeRegExp(label), "i").test(s)
-  ).length;
+  return SIDE_PANEL_DISCOVERY_LABELS.filter((label) => new RegExp(escapeRegExp(label), "i").test(s))
+    .length;
 }
 
 function scoreSidePanelTabBarContainer(text) {
@@ -3448,7 +3539,9 @@ function leafSidePanelTabKey(text, childTexts = []) {
   const s = normalizeSidePanelTabLabel(text);
   const key = sidePanelTabKeyFromText(s);
   if (!key || isGluedSidePanelTabContainer(s)) return null;
-  const childKeys = childTexts.map((childText) => sidePanelTabKeyFromText(childText)).filter(Boolean);
+  const childKeys = childTexts
+    .map((childText) => sidePanelTabKeyFromText(childText))
+    .filter(Boolean);
   if (childKeys.includes(key)) return null;
   return key;
 }
@@ -3861,27 +3954,19 @@ function collectFrameWalkTexts() {
     const roots = [];
     if (fromTab) {
       let node = fromTab;
-      for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+      for (let depth = 0; node && depth < 12; depth++, node = node.parentElement) {
         roots.push(node);
       }
     }
 
-    [
-      "[class*='MatchLiveStats']",
-      "[class*='SimpleMatchStats']",
-      "[class*='StatsGraph']",
-      "[class*='MatchLiveModule']",
-      "[class*='InPlayModule']",
-      "[class*='StatsModule']",
-    ].forEach((sel) => queryDeep(sel).forEach((el) => roots.push(el)));
+    LIVE_STATS_PANEL_SCOPE_SELECTORS.forEach((sel) =>
+      queryDeep(sel).forEach((el) => roots.push(el))
+    );
 
     let best = null;
     let bestScore = 0;
     for (const el of [...new Set(roots)]) {
-      const text = el.innerText || "";
-      if (looksLikeMarketRibbonText(text)) continue;
-      if (!looksLikeLiveStatsPanelText(text)) continue;
-      const score = scoreStatsSubTabBarContainer(text);
+      const score = scoreLiveStatsPanelRootText(el.innerText || "");
       if (score > bestScore) {
         bestScore = score;
         best = el;
@@ -3939,6 +4024,11 @@ function collectFrameWalkTexts() {
       }
     }
 
+    if (candidates.length < 3) {
+      const sideRoot = findSidePanelRoot(fromTab);
+      if (sideRoot) walkElementsWithin(sideRoot, consider);
+    }
+
     const byKey = new Map();
     candidates.forEach((tab) => {
       const prev = byKey.get(tab.key);
@@ -3950,7 +4040,9 @@ function collectFrameWalkTexts() {
   function collectSidePanelTabElements(labelRe) {
     const nodes = [];
     const scopes = [];
-    SIDE_PANEL_TAB_SCOPE_SELECTORS.forEach((sel) => queryDeep(sel).forEach((el) => scopes.push(el)));
+    SIDE_PANEL_TAB_SCOPE_SELECTORS.forEach((sel) =>
+      queryDeep(sel).forEach((el) => scopes.push(el))
+    );
     if (!scopes.length) scopes.push(document.documentElement);
 
     const pushNode = (el) => {
@@ -4054,7 +4146,7 @@ function collectFrameWalkTexts() {
     }
 
     const panelText = statsRoot.innerText || "";
-    if (looksLikeMarketRibbonText(panelText) || !looksLikeLiveStatsPanelText(panelText)) {
+    if (!looksLikeLiveStatsPanelText(panelText) || shouldTreatAsMarketRibbonNotStats(panelText)) {
       return { textBySubTab, subTabClicks, skipped: "market-ribbon-not-stats-panel" };
     }
 
@@ -4100,7 +4192,7 @@ function collectFrameWalkTexts() {
     tabClicks.stats = Boolean(statsTab);
     if (statsTab) await delay(250);
 
-    const statsRoot = findLiveStatsPanelRoot(statsTab);
+    const statsRoot = findLiveStatsPanelRoot(statsTab) || findSidePanelRoot(statsTab);
     const {
       textBySubTab,
       subTabClicks,
@@ -4252,16 +4344,21 @@ function collectFrameWalkTexts() {
     const visitList = getMarketTabsVisitList();
     const nodes = [];
     const seen = new Set();
+    const containerRects = [];
 
     const pushNode = (el) => {
       try {
         const text = normalizeLeafText(el);
         const childTexts = [...(el?.children || [])].map((child) => normalizeLeafText(child));
-        const key = leafMarketTabKey(text, childTexts);
-        if (!key || seen.has(key)) return;
+        if (!isMarketTabLeafText(text) && !leafMarketTabKey(text, childTexts)) return;
+        if (String(el.innerText || "").length > 80) return;
         const rect = el.getBoundingClientRect();
-        if (!isInMarketTabBand(rect, window.innerHeight, window.innerWidth, pageMode)) return;
-        seen.add(key);
+        if (rect.width < 8 || rect.height < 4) return;
+        const label = marketCategoryTabKey(text) || leafMarketTabKey(text, childTexts);
+        if (!label) return;
+        const dedupe = `${label}|${Math.round(rect.top)}|${Math.round(rect.left)}`;
+        if (seen.has(dedupe)) return;
+        seen.add(dedupe);
         nodes.push({
           el,
           text,
@@ -4271,6 +4368,8 @@ function collectFrameWalkTexts() {
             left: rect.left,
             width: rect.width,
             height: rect.height,
+            bottom: rect.bottom,
+            right: rect.right,
           },
         });
       } catch (_) {}
@@ -4280,12 +4379,26 @@ function collectFrameWalkTexts() {
     MARKET_TAB_CONTAINER_SELECTORS.forEach((sel) => {
       queryDeep(sel).forEach((el) => {
         const score = scoreMarketTabBarContainer(el.textContent || "");
-        if (score >= 4) containers.push({ el, score });
+        if (score >= 3) {
+          containers.push({ el, score });
+          try {
+            const rect = el.getBoundingClientRect();
+            containerRects.push({
+              score,
+              rect: {
+                top: rect.top,
+                left: rect.left,
+                bottom: rect.bottom,
+                right: rect.right,
+              },
+            });
+          } catch (_) {}
+        }
       });
     });
     containers.sort((a, b) => b.score - a.score);
 
-    for (const { el } of containers.slice(0, 4)) {
+    for (const { el } of containers.slice(0, 6)) {
       walkTabContainer(el, pushNode);
       if (nodes.length >= visitList.length) break;
     }
@@ -4301,7 +4414,8 @@ function collectFrameWalkTexts() {
       nodes,
       window.innerHeight,
       window.innerWidth,
-      pageMode
+      pageMode,
+      containerRects
     ).map((tab) => ({ ...tab, el: tab.el }));
   }
 

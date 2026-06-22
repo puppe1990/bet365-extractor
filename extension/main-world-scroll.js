@@ -33,14 +33,16 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
 
   const MARKET_TAB_VISIT_BUDGET_MS = 10_000;
   const MARKET_TAB_CLICK_DELAY_MS = 280;
-  const MARKET_TAB_BAND_TOP_PX = 480;
-  const MARKET_TAB_BAND_TOP_RATIO = 0.42;
-  const PREMATCH_MARKET_TAB_BAND_TOP_PX = 560;
-  const PREMATCH_MARKET_TAB_BAND_TOP_RATIO = 0.58;
-  const MARKET_TAB_LEFT_COLUMN_RATIO = 0.62;
+  const MARKET_TAB_BAND_TOP_PX = 560;
+  const MARKET_TAB_BAND_TOP_RATIO = 0.55;
+  const PREMATCH_MARKET_TAB_BAND_TOP_PX = 600;
+  const PREMATCH_MARKET_TAB_BAND_TOP_RATIO = 0.62;
+  const MARKET_TAB_LEFT_COLUMN_RATIO = 0.78;
+  const MARKET_TAB_LEAF_MAX_TEXT_LEN = 40;
 
   const MARKET_TAB_CONTAINER_SELECTORS = [
     "[class*='Classification']",
+    "[class*='ClassificationRibbon']",
     "[class*='Ribbon']",
     "[class*='MarketFilter']",
     "[class*='CouponClassification']",
@@ -48,15 +50,24 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     "[class*='MarketCoupon']",
     "[class*='SlideScroller']",
     "[class*='FilterBar']",
+    "[class*='InPlay']",
+    "[class*='EventView']",
+    "[class*='ipe-']",
+    "[class*='ovm-']",
   ];
 
   const MARKET_TAB_LEAF_SELECTORS = [
+    "[class*='Classification'] [class*='Item']",
+    "[class*='ClassificationRibbon'] *",
     "[class*='Scroller'] [class*='Item']",
     "[class*='Scroller'] button",
     "[class*='Scroller'] [role='tab']",
     "[class*='Classification'] *",
+    "[class*='HorizontalScroll'] *",
     "button",
     "[role='tab']",
+    "span",
+    "a",
   ];
 
   function escapeRegExp(text) {
@@ -139,7 +150,30 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     if (/Jogador/i.test(text)) score += 2;
     if (/Gols/i.test(text)) score += 1;
     if (/Instant/i.test(text)) score += 1;
+    if (/Escanteios\/Cartões/i.test(text)) score += 2;
+    if (/Criar Aposta/i.test(text)) score += 1;
     return score;
+  }
+
+  function isMarketTabLeafText(text) {
+    const s = normalizeMarketTabLabel(text);
+    if (!s || s.length > MARKET_TAB_LEAF_MAX_TEXT_LEN) return false;
+    return Boolean(marketCategoryTabKey(s));
+  }
+
+  function isInsideScoredMarketTabContainer(rect, containerRects = []) {
+    if (!rect || !containerRects.length) return false;
+    return containerRects.some((container) => {
+      if (!container || container.score < 4) return false;
+      const c = container.rect;
+      if (!c) return false;
+      return (
+        rect.top >= c.top - 12 &&
+        rect.bottom <= c.bottom + 12 &&
+        rect.left >= c.left - 12 &&
+        rect.right <= c.right + 12
+      );
+    });
   }
 
   function leafMarketTabKey(text, childTexts = []) {
@@ -165,20 +199,31 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     nodes,
     innerHeight = 800,
     innerWidth = 1200,
-    pageMode = "auto"
+    pageMode = "auto",
+    containerRects = []
   ) {
     const candidates = [];
     const seen = new Set();
 
     for (const node of nodes) {
       const text = normalizeMarketTabLabel(node.text);
-      const key = leafMarketTabKey(
-        text,
-        (node.childTexts || []).map((childText) => normalizeMarketTabLabel(childText))
+      const childTexts = (node.childTexts || []).map((childText) =>
+        normalizeMarketTabLabel(childText)
       );
+      let key = leafMarketTabKey(text, childTexts);
+      if (
+        !key &&
+        isMarketTabLeafText(text) &&
+        !childTexts.some((childText) => marketCategoryTabKey(childText))
+      ) {
+        key = marketCategoryTabKey(text);
+      }
       if (!key || seen.has(key)) continue;
       const rect = node.rect;
-      if (!isInMarketTabBand(rect, innerHeight, innerWidth, pageMode)) continue;
+      const inBand =
+        isInMarketTabBand(rect, innerHeight, innerWidth, pageMode) ||
+        isInsideScoredMarketTabContainer(rect, containerRects);
+      if (!inBand) continue;
       seen.add(key);
       candidates.push({
         label: key,
@@ -345,16 +390,21 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     const visitList = getMarketTabsVisitList();
     const nodes = [];
     const seen = new Set();
+    const containerRects = [];
 
     const pushNode = (el) => {
       try {
         const text = normalizeLeafText(el);
         const childTexts = [...(el?.children || [])].map((child) => normalizeLeafText(child));
-        const key = leafMarketTabKey(text, childTexts);
-        if (!key || seen.has(key)) return;
+        if (!isMarketTabLeafText(text) && !leafMarketTabKey(text, childTexts)) return;
+        if (String(el.innerText || "").length > 80) return;
         const rect = el.getBoundingClientRect();
-        if (!isInMarketTabBand(rect, window.innerHeight, window.innerWidth, pageMode)) return;
-        seen.add(key);
+        if (rect.width < 8 || rect.height < 4) return;
+        const label = marketCategoryTabKey(text) || leafMarketTabKey(text, childTexts);
+        if (!label) return;
+        const dedupe = `${label}|${Math.round(rect.top)}|${Math.round(rect.left)}`;
+        if (seen.has(dedupe)) return;
+        seen.add(dedupe);
         nodes.push({
           el,
           text,
@@ -364,6 +414,8 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
             left: rect.left,
             width: rect.width,
             height: rect.height,
+            bottom: rect.bottom,
+            right: rect.right,
           },
         });
       } catch (_) {}
@@ -373,12 +425,26 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     MARKET_TAB_CONTAINER_SELECTORS.forEach((sel) => {
       queryDeep(sel).forEach((el) => {
         const score = scoreMarketTabBarContainer(el.textContent || "");
-        if (score >= 4) containers.push({ el, score });
+        if (score >= 3) {
+          containers.push({ el, score });
+          try {
+            const rect = el.getBoundingClientRect();
+            containerRects.push({
+              score,
+              rect: {
+                top: rect.top,
+                left: rect.left,
+                bottom: rect.bottom,
+                right: rect.right,
+              },
+            });
+          } catch (_) {}
+        }
       });
     });
     containers.sort((a, b) => b.score - a.score);
 
-    for (const { el } of containers.slice(0, 4)) {
+    for (const { el } of containers.slice(0, 6)) {
       walkTabContainer(el, pushNode);
       if (nodes.length >= visitList.length) break;
     }
@@ -390,9 +456,13 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
       }
     }
 
-    return collectMarketTabCandidates(nodes, window.innerHeight, window.innerWidth, pageMode).map(
-      (tab) => ({ ...tab, el: tab.el })
-    );
+    return collectMarketTabCandidates(
+      nodes,
+      window.innerHeight,
+      window.innerWidth,
+      pageMode,
+      containerRects
+    ).map((tab) => ({ ...tab, el: tab.el }));
   }
 
   async function scrollMarketTabBars() {
