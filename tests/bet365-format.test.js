@@ -66,6 +66,14 @@ describe("buildBet365Filename", () => {
 
     assert.equal(name, "campeonato-time-a-time-b-sem-placar-2026-06-21_12-00-00.zip");
   });
+
+  it("usa eventId no slug quando times estão ausentes", () => {
+    const slug = buildBet365Slug({
+      match: { eventId: "E192268168", score: null },
+    });
+
+    assert.equal(slug, "e192268168");
+  });
 });
 
 describe("formatBet365DebugLogs", () => {

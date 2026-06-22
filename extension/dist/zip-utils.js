@@ -15,7 +15,9 @@ function buildBet365Slug(data) {
     .filter(Boolean)
     .map((team) => slugifyFilenamePart(team))
     .filter(Boolean);
-  return parts.join("-") || "jogo";
+  if (parts.length >= 2) return parts.join("-");
+  if (m.eventId) return slugifyFilenamePart(m.eventId) || "jogo";
+  return parts[0] || "jogo";
 }
 
 function buildBet365Filename(data, ext, isoDate = new Date().toISOString()) {

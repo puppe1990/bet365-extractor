@@ -13,6 +13,8 @@ import {
   finalizeMatchWithMarkets,
   finalizeMatchData,
   parseOddsFromVisibleText,
+  extractTeamsFromResultadoFinalOdds,
+  resolveMatchTeams,
 } from "../lib/bet365-parsers.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -118,7 +120,8 @@ describe("pré-jogo Nova Zelândia x Egito", () => {
       FIXTURE,
       { statsCount: 0, visibleTextLength: FIXTURE.length },
       "2026-06-21T12:00:00.000Z",
-      PREMATCH_URL
+      PREMATCH_URL,
+      { headerText: FIXTURE }
     );
 
     assert.equal(match.homeTeam, "Nova Zelândia");
@@ -126,5 +129,51 @@ describe("pré-jogo Nova Zelândia x Egito", () => {
     assert.equal(match.competition, "Copa do Mundo 2026");
     assert.equal(match.score, null);
     assert.ok(match.scoreWarnings.some((w) => /pré-jogo/i.test(w)));
+  });
+
+  it("ignora confronto antigo do painel lateral e usa página atual", () => {
+    const polluted = [
+      "Argentina v Áustria",
+      "Copa do Mundo 2026",
+      "88:57",
+      "---PAGE---",
+      FIXTURE,
+    ].join("\n");
+
+    const teams = resolveMatchTeams(
+      {},
+      {
+        headerText: FIXTURE,
+        odds: parseOddsFromVisibleText(FIXTURE),
+      }
+    );
+
+    assert.equal(teams.homeTeam, "Nova Zelândia");
+    assert.equal(teams.awayTeam, "Egito");
+
+    const match = finalizeMatchData(
+      { score: null, clock: null },
+      polluted,
+      { statsCount: 0, visibleTextLength: polluted.length },
+      "2026-06-21T12:00:00.000Z",
+      PREMATCH_URL,
+      {
+        headerText: FIXTURE,
+        odds: parseOddsFromVisibleText(FIXTURE),
+      }
+    );
+
+    assert.equal(match.homeTeam, "Nova Zelândia");
+    assert.equal(match.awayTeam, "Egito");
+  });
+
+  it("extrai times do mercado Resultado Final", () => {
+    const odds = parseOddsFromVisibleText(FIXTURE);
+    const teams = extractTeamsFromResultadoFinalOdds(odds);
+
+    assert.deepEqual(teams, {
+      homeTeam: "Nova Zelândia",
+      awayTeam: "Egito",
+    });
   });
 });

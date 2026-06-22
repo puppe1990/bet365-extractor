@@ -567,6 +567,27 @@
     { sel: "[class*='Score']", source: "dom" },
   ];
 
+  function extractMatchHeaderFromDOM() {
+    const headerSelectors = [
+      "[class*='EventHeader']",
+      "[class*='FixtureHeader']",
+      "[class*='MatchHeader']",
+      "[class*='CouponFixture']",
+      "[class*='ovm-Overview']",
+    ];
+
+    for (const sel of headerSelectors) {
+      for (const el of queryDeep(sel)) {
+        const text = (el.innerText || "").replace(/\s+/g, " ").trim();
+        if (text.length < 8 || text.length > 500) continue;
+        const header = enrichMatchFromHeader(text, {});
+        if (header.homeTeam && header.awayTeam) return header;
+      }
+    }
+
+    return null;
+  }
+
   function probeDomScoreboardSelectors() {
     return DOM_SCOREBOARD_SELECTORS.map(({ sel, source }) => {
       const els = queryDeep(sel);
@@ -752,8 +773,9 @@
 
     const extractedAt = new Date().toISOString();
     const { textByTab, tabClicks } = await collectSidePanelTexts();
-    const visibleText =
-      Object.values(textByTab).filter(Boolean).join("\n---SIDE-TAB---\n") || getAllVisibleText();
+    const pageText = getAllVisibleText();
+    const sideText = Object.values(textByTab).filter(Boolean).join("\n---SIDE-TAB---\n");
+    const visibleText = sideText ? `${pageText}\n---PAGE---\n${sideText}` : pageText;
     pipeline.push({
       step: "sidePanelTabs",
       ok: Object.values(tabClicks).some(Boolean),
@@ -806,7 +828,8 @@
     });
     stepAt = Date.now();
 
-    const header = enrichMatchFromHeader(visibleText, {});
+    const domHeader = extractMatchHeaderFromDOM();
+    const header = domHeader || enrichMatchFromHeader(pageText, {});
     const domProbe = probeDomScoreboardSelectors();
     pipeline.push({
       step: "domProbe",
@@ -912,7 +935,8 @@
       visibleText,
       meta,
       extractedAt,
-      location.href
+      location.href,
+      { headerText: pageText, domHeader }
     );
     pipeline.push({
       step: "marketInference",
