@@ -20,17 +20,27 @@ function buildBet365Slug(data) {
   return parts[0] || "jogo";
 }
 
+function slugifyClockPart(clock) {
+  if (!clock) return "sem-tempo";
+  const normalized = String(clock)
+    .trim()
+    .replace(/:/g, "-")
+    .replace(/\+/g, "mais");
+  return slugifyFilenamePart(normalized) || "sem-tempo";
+}
+
 function buildBet365Filename(data, ext, isoDate = new Date().toISOString()) {
   const m = data?.match || {};
   const competition = slugifyFilenamePart(m.competition) || "campeonato";
   const game = buildBet365Slug(data);
   const score = slugifyFilenamePart(m.score) || "sem-placar";
+  const clock = slugifyClockPart(m.clock);
   const ts = (m.extractedAt || isoDate)
     .replace(/\.\d{3}Z?$/i, "")
     .replace(/Z$/i, "")
     .replace("T", "_")
     .replace(/:/g, "-");
-  return `${competition}-${game}-${score}-${ts}.${ext}`;
+  return `${competition}-${game}-${score}-${clock}-${ts}.${ext}`;
 }
 
 function formatBet365Logs(data) {

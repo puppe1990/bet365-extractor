@@ -5,6 +5,7 @@ import {
   formatBet365DebugLogs,
   buildBet365Filename,
   buildBet365Slug,
+  slugifyClockPart,
 } from "../lib/bet365-format.js";
 
 const SAMPLE = {
@@ -54,7 +55,7 @@ describe("buildBet365Filename", () => {
   it("monta campeonato-jogo-placar-timestamp", () => {
     const name = buildBet365Filename(SAMPLE, "json", "2026-06-21T23:30:00.000Z");
 
-    assert.equal(name, "copa-do-mundo-2026-uruguai-cabo-verde-2-1-2026-06-21_23-30-00.json");
+    assert.equal(name, "copa-do-mundo-2026-uruguai-cabo-verde-2-1-45-00-2026-06-21_23-30-00.json");
   });
 
   it("usa fallback quando faltam campeonato ou placar", () => {
@@ -64,7 +65,7 @@ describe("buildBet365Filename", () => {
       "2026-06-21T12:00:00.000Z"
     );
 
-    assert.equal(name, "campeonato-time-a-time-b-sem-placar-2026-06-21_12-00-00.zip");
+    assert.equal(name, "campeonato-time-a-time-b-sem-placar-sem-tempo-2026-06-21_12-00-00.zip");
   });
 
   it("usa eventId no slug quando times estão ausentes", () => {
@@ -150,5 +151,13 @@ describe("formatBet365DebugLogs", () => {
 describe("buildBet365Slug", () => {
   it("normaliza nomes dos times", () => {
     assert.equal(buildBet365Slug(SAMPLE), "uruguai-cabo-verde");
+  });
+});
+
+describe("slugifyClockPart", () => {
+  it("converte relógio do jogo para slug", () => {
+    assert.equal(slugifyClockPart("45:00"), "45-00");
+    assert.equal(slugifyClockPart("90+3:00"), "90mais3-00");
+    assert.equal(slugifyClockPart(null), "sem-tempo");
   });
 });

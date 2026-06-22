@@ -93,7 +93,10 @@ describe("formatBet365TraceLogs", () => {
 describe("buildZipFilename", () => {
   it("gera nome campeonato-jogo-placar-timestamp.zip", () => {
     const name = buildZipFilename(SAMPLE, "2026-06-21T23:30:00.000Z");
-    assert.equal(name, "copa-do-mundo-2026-uruguai-cabo-verde-2-2-2026-06-21_23-30-00.zip");
+    assert.equal(
+      name,
+      "copa-do-mundo-2026-uruguai-cabo-verde-2-2-sem-tempo-2026-06-21_23-30-00.zip"
+    );
   });
 });
 

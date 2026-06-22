@@ -924,18 +924,99 @@
     return parseHalftimeScore(text);
   }
 
+  const COMPETITION_RE =
+    /(Copa do Mundo \d{4}|Champions League|Premier League|La Liga|Serie A|Bundesliga|Ligue 1)/i;
+
+  const DRAW_SELECTION_RE = /^(empate|draw|tie|x)$/i;
+
+  function extractPageTextFromMerged(text) {
+    const chunks = String(text || "").split(/---PAGE---/);
+    if (chunks.length > 1) {
+      return [...chunks.slice(1)].sort((a, b) => b.length - a.length)[0] || chunks[0];
+    }
+    return String(text || "").split(/---SIDE-TAB---/)[0] || String(text || "");
+  }
+
+  function extractHeaderSlice(text, maxLines = 30) {
+    return linesFromText(extractPageTextFromMerged(text)).slice(0, maxLines).join("\n");
+  }
+
+  function parseVsLineStrict(text) {
+    for (const line of linesFromText(text)) {
+      const m = line.match(
+        /^([A-Za-zÀ-ú][A-Za-zÀ-ú'. -]{2,40})\s+v\s+([A-Za-zÀ-ú][A-Za-zÀ-ú'. -]{2,40})$/i
+      );
+      if (!m) continue;
+      return { homeTeam: normalize(m[1]), awayTeam: normalize(m[2]) };
+    }
+    return null;
+  }
+
+  function extractCompetitionFromText(text) {
+    return String(text || "").match(COMPETITION_RE)?.[0] || null;
+  }
+
+  function extractTeamsFromResultadoFinalOdds(odds) {
+    const selections = [];
+    const seen = new Set();
+
+    for (const row of odds || []) {
+      if (!/^resultado\s*final$/i.test(String(row?.market || "").trim())) continue;
+      const selection = normalize(row?.selection);
+      if (!selection || DRAW_SELECTION_RE.test(selection) || seen.has(selection)) continue;
+      seen.add(selection);
+      selections.push(selection);
+      if (selections.length >= 2) break;
+    }
+
+    if (selections.length < 2) return null;
+    return { homeTeam: selections[0], awayTeam: selections[1] };
+  }
+
+  function resolveMatchTeams(match = {}, options = {}) {
+    const { headerText = "", odds = [], domHeader = null } = options;
+    const headerSlice = extractHeaderSlice(headerText || "");
+    const fromDom =
+      domHeader?.homeTeam && domHeader?.awayTeam
+        ? { homeTeam: domHeader.homeTeam, awayTeam: domHeader.awayTeam }
+        : null;
+    const fromOdds = extractTeamsFromResultadoFinalOdds(odds);
+    const fromHeader = parseVsLineStrict(headerSlice) || parseVsLineStrict(headerText);
+    const fromMatch =
+      match.homeTeam && match.awayTeam
+        ? { homeTeam: match.homeTeam, awayTeam: match.awayTeam }
+        : null;
+
+    const homeTeam =
+      fromDom?.homeTeam ||
+      fromOdds?.homeTeam ||
+      fromMatch?.homeTeam ||
+      fromHeader?.homeTeam ||
+      null;
+    const awayTeam =
+      fromDom?.awayTeam ||
+      fromOdds?.awayTeam ||
+      fromMatch?.awayTeam ||
+      fromHeader?.awayTeam ||
+      null;
+    const competition =
+      match.competition ||
+      extractCompetitionFromText(headerSlice) ||
+      extractCompetitionFromText(headerText) ||
+      null;
+
+    return { homeTeam, awayTeam, competition };
+  }
+
   function enrichMatchFromHeader(text, match = {}) {
-    const vs = text.match(
-      /([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})\s+v\s+([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})/
-    );
-    const competition = text.match(
-      /(Copa do Mundo \d{4}|Champions League|Premier League|La Liga|Serie A|Bundesliga|Ligue 1)/i
-    )?.[0];
+    const headerSlice = extractHeaderSlice(text);
+    const vs = parseVsLineStrict(headerSlice);
+    const competition = extractCompetitionFromText(headerSlice) || extractCompetitionFromText(text);
 
     return {
       ...match,
-      homeTeam: match.homeTeam || (vs ? normalize(vs[1]) : null),
-      awayTeam: match.awayTeam || (vs ? normalize(vs[2]) : null),
+      homeTeam: match.homeTeam || vs?.homeTeam || null,
+      awayTeam: match.awayTeam || vs?.awayTeam || null,
       competition: match.competition || competition || null,
     };
   }
@@ -1953,12 +2034,19 @@
     };
   }
 
-  function finalizeMatchData(match, visibleText, meta, extractedAt, pageUrl) {
+  function finalizeMatchData(match, visibleText, meta, extractedAt, pageUrl, options = {}) {
     const preMatch = isBet365PreMatchUrl(pageUrl);
-    const enriched = enrichMatchFromHeader(visibleText, {
-      ...stripPreMatchScore(match, pageUrl),
-      extractedAt,
+    const headerText = options.headerText || visibleText;
+    const teams = resolveMatchTeams(stripPreMatchScore(match, pageUrl), {
+      headerText,
+      odds: options.odds || [],
+      domHeader: options.domHeader || null,
     });
+    const enriched = {
+      ...stripPreMatchScore(match, pageUrl),
+      ...teams,
+      extractedAt,
+    };
     const confidence = assessMatchConfidence(enriched, {
       ...meta,
       statsCount: meta.statsCount ?? 0,
@@ -1972,8 +2060,20 @@
     };
   }
 
-  function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt, pageUrl) {
-    const finalized = finalizeMatchData(match, visibleText, meta, extractedAt, pageUrl);
+  function finalizeMatchWithMarkets(
+    match,
+    odds,
+    visibleText,
+    meta,
+    extractedAt,
+    pageUrl,
+    options = {}
+  ) {
+    const finalized = finalizeMatchData(match, visibleText, meta, extractedAt, pageUrl, {
+      ...options,
+      odds,
+      headerText: options.headerText || visibleText,
+    });
     if (isBet365PreMatchUrl(pageUrl)) {
       const analysis = analyzeMarketScore(odds, finalized);
       return {
@@ -2021,7 +2121,15 @@
       .filter(Boolean)
       .map((team) => slugifyFilenamePart(team))
       .filter(Boolean);
-    return parts.join("-") || "jogo";
+    if (parts.length >= 2) return parts.join("-");
+    if (m.eventId) return slugifyFilenamePart(m.eventId) || "jogo";
+    return parts[0] || "jogo";
+  }
+
+  function slugifyClockPart(clock) {
+    if (!clock) return "sem-tempo";
+    const normalized = String(clock).trim().replace(/:/g, "-").replace(/\+/g, "mais");
+    return slugifyFilenamePart(normalized) || "sem-tempo";
   }
 
   function buildBet365Filename(data, ext, isoDate = new Date().toISOString()) {
@@ -2029,12 +2137,13 @@
     const competition = slugifyFilenamePart(m.competition) || "campeonato";
     const game = buildBet365Slug(data);
     const score = slugifyFilenamePart(m.score) || "sem-placar";
+    const clock = slugifyClockPart(m.clock);
     const ts = (m.extractedAt || isoDate)
       .replace(/\.\d{3}Z?$/i, "")
       .replace(/Z$/i, "")
       .replace("T", "_")
       .replace(/:/g, "-");
-    return `${competition}-${game}-${score}-${ts}.${ext}`;
+    return `${competition}-${game}-${score}-${clock}-${ts}.${ext}`;
   }
 
   function formatBet365Logs(data) {
