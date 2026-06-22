@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import {
   parseTimelineFromText,
   mergeTimelineSectionTexts,
+  scoreTimelinePanelText,
+  isTimelineRowText,
   parseLineupFromText,
   parseLineupFromNetworkBlob,
   parsePlayerFinalizationsFromText,
@@ -27,6 +29,23 @@ import {
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const readFixture = (name) => readFileSync(join(__dir, "fixtures", name), "utf8");
+
+describe("scoreTimelinePanelText", () => {
+  it("prefere texto de cronologia com minutos em vez de painel de estatísticas", () => {
+    const timeline = readFixture("side-panel-timeline-france-iraq.txt");
+    const stats = "Estat.\n0.22 xG\nAtaques Perigosos\nCronologia\n31'\n2º Escanteio";
+
+    assert.ok(scoreTimelinePanelText(timeline) > scoreTimelinePanelText(stats));
+  });
+});
+
+describe("isTimelineRowText", () => {
+  it("reconhece linhas de minuto e eventos da cronologia", () => {
+    assert.equal(isTimelineRowText("8'"), true);
+    assert.equal(isTimelineRowText("1º Escanteio"), true);
+    assert.equal(isTimelineRowText("Ataques Perigosos"), false);
+  });
+});
 
 describe("mergeTimelineSectionTexts", () => {
   it("combina snapshots de scroll da cronologia sem perder eventos antigos", () => {

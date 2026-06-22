@@ -434,42 +434,148 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  const TIMELINE_SCROLL_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
+  const TIMELINE_SCROLL_FRACTIONS = [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1];
 
-  async function scrollTimelinePanel(fromTab) {
-    const root = findSidePanelRoot(fromTab);
-    if (!root) return { text: "", scrollSteps: 0, container: null };
-
-    const targets = collectScrollableTargets(root);
-    const scrollEl =
-      targets.find((el) => el.scrollHeight > el.clientHeight + 20) || targets[0] || root;
-    const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
-    const originalTop = scrollEl.scrollTop;
-    const snapshots = [];
-
-    const capture = () => {
-      const t = root.innerText || scrollEl.innerText || "";
-      if (t) snapshots.push(t);
+  function findTimelinePanelRoot(fromTab) {
+    const roots = [];
+    const seen = new Set();
+    const push = (el) => {
+      if (!el || seen.has(el)) return;
+      seen.add(el);
+      roots.push(el);
     };
 
-    capture();
-
-    if (maxScroll >= 20) {
-      for (const fraction of TIMELINE_SCROLL_FRACTIONS) {
-        scrollEl.scrollTop = Math.floor(maxScroll * fraction);
-        scrollEl.dispatchEvent(new Event("scroll", { bubbles: true }));
-        await delay(60);
-        capture();
+    if (fromTab) {
+      let node = fromTab;
+      for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+        push(node);
       }
     }
 
-    scrollEl.scrollTop = originalTop;
+    TIMELINE_PANEL_SCOPE_SELECTORS.forEach((sel) => queryDeep(sel).forEach((el) => push(el)));
+    const fallback = findSidePanelRoot(fromTab);
+    if (fallback) push(fallback);
+
+    let best = fallback;
+    let bestScore = scoreTimelinePanelText(best?.innerText || "");
+    for (const el of roots) {
+      const score = scoreTimelinePanelText(el.innerText || "");
+      if (score > bestScore) {
+        bestScore = score;
+        best = el;
+      }
+    }
+    return best;
+  }
+
+  function scoreTimelineScrollTarget(el) {
+    const t = el?.innerText || "";
+    let score = scoreTimelinePanelText(t);
+    const cls = String(el?.className || "");
+    if (/Timeline|Chronolog|EventsList|MatchEvent|Incident|LocationEvent/i.test(cls)) score += 150;
+    if (/Scroller|Scroll|Virtual/i.test(cls)) score += 60;
+    const overflow = Math.max(0, (el?.scrollHeight || 0) - (el?.clientHeight || 0));
+    if (overflow > 8) score += Math.min(overflow, 300);
+    else score -= 120;
+    if (el?.clientHeight > 0 && el.clientHeight < 520) score += 40;
+    return score;
+  }
+
+  function collectTimelineScrollTargets(root) {
+    const out = [];
+    const seen = new Set();
+    const push = (el) => {
+      if (!el || seen.has(el)) return;
+      seen.add(el);
+      out.push(el);
+    };
+
+    try {
+      TIMELINE_PANEL_SCOPE_SELECTORS.forEach((sel) => root.querySelectorAll(sel).forEach(push));
+      collectScrollableTargets(root).forEach(push);
+      root.querySelectorAll("*").forEach((el) => {
+        if (!isScrollableElement(el)) return;
+        push(el);
+      });
+    } catch (_) {}
+
+    queryDeep(
+      "[class*='Timeline'], [class*='Chronolog'], [class*='EventsList'], [class*='Scroller'], [class*='LocationEvents']"
+    ).forEach((el) => {
+      if (root === el || root.contains(el)) push(el);
+    });
+
+    return out.sort((a, b) => scoreTimelineScrollTarget(b) - scoreTimelineScrollTarget(a));
+  }
+
+  async function scrollTimelineRowsIntoView(root) {
+    const rows = [];
+    walkElementsWithin(root, (el) => {
+      const t = normalize(el.innerText || el.textContent || "");
+      if (isTimelineRowText(t)) rows.push(el);
+    });
+
+    for (const el of [...new Set(rows)].slice(-14)) {
+      try {
+        el.scrollIntoView({ block: "center", behavior: "instant" });
+        await delay(85);
+      } catch (_) {}
+    }
+  }
+
+  async function scrollTimelinePanel(fromTab) {
+    const root = findTimelinePanelRoot(fromTab) || findSidePanelRoot(fromTab);
+    if (!root) return { text: "", scrollSteps: 0, container: null };
+
+    const snapshots = [];
+    const capture = (...els) => {
+      const texts = els
+        .filter(Boolean)
+        .map((el) => el.innerText || "")
+        .filter(Boolean);
+      if (root?.innerText) texts.push(root.innerText);
+      const merged = mergeTimelineSectionTexts(...texts);
+      if (merged) snapshots.push(merged);
+    };
+
+    capture(root);
+
+    const targets = collectTimelineScrollTargets(root).slice(0, 4);
+    const originals = new Map();
+
+    for (const scrollEl of targets) {
+      originals.set(scrollEl, scrollEl.scrollTop);
+      const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      if (maxScroll < 8) continue;
+
+      for (const fraction of TIMELINE_SCROLL_FRACTIONS) {
+        scrollEl.scrollTop = Math.floor(maxScroll * fraction);
+        scrollEl.dispatchEvent(new Event("scroll", { bubbles: true }));
+        try {
+          scrollEl.dispatchEvent(
+            new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 100 })
+          );
+        } catch (_) {}
+        await delay(90);
+        capture(scrollEl);
+      }
+    }
+
+    await scrollTimelineRowsIntoView(root);
+    capture(root);
+    for (const scrollEl of targets.slice(0, 2)) {
+      capture(scrollEl);
+    }
+
+    originals.forEach((top, el) => {
+      el.scrollTop = top;
+    });
 
     const merged = mergeTimelineSectionTexts(...snapshots);
     return {
       text: merged || snapshots[0] || "",
       scrollSteps: snapshots.length,
-      container: String(scrollEl.className || "timeline-scroll").slice(0, 80),
+      container: String(targets[0]?.className || root.className || "timeline-scroll").slice(0, 80),
     };
   }
 
