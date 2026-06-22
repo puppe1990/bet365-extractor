@@ -8,6 +8,8 @@ import {
   STATS_SUB_TAB_KEYS,
   extractStatsFromSubTabTexts,
   leafStatsSubTabKey,
+  looksLikeLiveStatsPanelText,
+  looksLikeMarketRibbonText,
   mergeStatsSubTabTexts,
   scoreStatsSubTabBarContainer,
   statsSubTabKey,
@@ -33,9 +35,29 @@ describe("bet365 stats sub-tabs", () => {
     assert.equal(statsSubTabKey("Outr ›"), "Outros");
   });
 
-  it("detecta barra com várias sub-abas", () => {
-    const glued =
-      "Marcadores Chutes Cartões/Faltas Estatísticas do Jogador Resultado Escanteios Gols";
+  it("rejeita faixa de mercados de jogador na coluna esquerda", () => {
+    const marketRibbon = [
+      "Popular",
+      "Marcadores",
+      "Chutes",
+      "Cartões/Faltas",
+      "Jogador a Marcar ou Dar Assistência",
+      "Kylian Mbappe",
+      "1.44",
+    ].join("\n");
+
+    assert.equal(looksLikeMarketRibbonText(marketRibbon), true);
+    assert.equal(looksLikeLiveStatsPanelText(marketRibbon), false);
+    assert.equal(scoreStatsSubTabBarContainer(marketRibbon), 0);
+  });
+
+  it("detecta barra com várias sub-abas no painel ao vivo", () => {
+    const glued = [
+      "Estat.",
+      "0.86 xG 0.23",
+      "Marcadores Chutes Cartões/Faltas Estatísticas do Jogador Resultado Escanteios Gols",
+      "Ataques Perigosos",
+    ].join("\n");
     assert.ok(scoreStatsSubTabBarContainer(glued) >= 5);
     assert.equal(leafStatsSubTabKey(glued), null);
     assert.equal(leafStatsSubTabKey("Chutes", ["Chutes"]), null);

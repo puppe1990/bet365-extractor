@@ -181,10 +181,44 @@
     }
   }
 
+  function findLiveStatsPanelRoot(fromTab) {
+    const roots = [];
+    if (fromTab) {
+      let node = fromTab;
+      for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+        roots.push(node);
+      }
+    }
+
+    [
+      "[class*='MatchLiveStats']",
+      "[class*='SimpleMatchStats']",
+      "[class*='StatsGraph']",
+      "[class*='MatchLiveModule']",
+      "[class*='InPlayModule']",
+      "[class*='StatsModule']",
+    ].forEach((sel) => queryDeep(sel).forEach((el) => roots.push(el)));
+
+    let best = null;
+    let bestScore = 0;
+    for (const el of [...new Set(roots)]) {
+      const text = el.innerText || "";
+      if (looksLikeMarketRibbonText(text)) continue;
+      if (!looksLikeLiveStatsPanelText(text)) continue;
+      const score = scoreStatsSubTabBarContainer(text);
+      if (score > bestScore) {
+        bestScore = score;
+        best = el;
+      }
+    }
+    return best;
+  }
+
   function collectStatsSubTabCandidates(root) {
     const candidates = [];
     const seen = new Set();
-    const scope = root || document.documentElement;
+    const scope = root;
+    if (!scope) return candidates;
 
     const consider = (el) => {
       try {
@@ -271,10 +305,41 @@
     return null;
   }
 
+  function getStatsPanelScopedText(statsRoot, fromTab) {
+    if (fromTab) {
+      let node = fromTab;
+      for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
+        const text = node.innerText || "";
+        if (
+          text.length > 40 &&
+          looksLikeLiveStatsPanelText(text) &&
+          !looksLikeMarketRibbonText(text)
+        ) {
+          return text;
+        }
+      }
+    }
+
+    const rootText = statsRoot?.innerText || "";
+    if (rootText && looksLikeLiveStatsPanelText(rootText) && !looksLikeMarketRibbonText(rootText)) {
+      return rootText;
+    }
+    return "";
+  }
+
   async function collectStatsSubTabTexts(statsRoot) {
     const textBySubTab = {};
     const subTabClicks = {};
     const startedAt = Date.now();
+
+    if (!statsRoot) {
+      return { textBySubTab, subTabClicks, skipped: "no-live-stats-panel" };
+    }
+
+    const panelText = statsRoot.innerText || "";
+    if (looksLikeMarketRibbonText(panelText) || !looksLikeLiveStatsPanelText(panelText)) {
+      return { textBySubTab, subTabClicks, skipped: "market-ribbon-not-stats-panel" };
+    }
 
     scrollStatsSubTabBars(statsRoot);
     let tabs = collectStatsSubTabCandidates(statsRoot);
@@ -293,12 +358,12 @@
         dispatchPanelClick(tab.el);
         subTabClicks[key] = true;
         await delay(STATS_SUB_TAB_CLICK_DELAY_MS);
-        const panelText = getSidePanelText(tab.el);
+        const panelText = getStatsPanelScopedText(statsRoot, tab.el);
         textBySubTab[key] = panelText ? `${tab.label}\n${panelText}` : tab.label;
       } catch (_) {}
     }
 
-    return { textBySubTab, subTabClicks };
+    return { textBySubTab, subTabClicks, skipped: null };
   }
 
   function clickStatsTab() {
@@ -318,8 +383,12 @@
     tabClicks.stats = Boolean(statsTab);
     if (statsTab) await delay(250);
 
-    const statsRoot = findSidePanelRoot(statsTab);
-    const { textBySubTab, subTabClicks } = await collectStatsSubTabTexts(statsRoot);
+    const statsRoot = findLiveStatsPanelRoot(statsTab);
+    const {
+      textBySubTab,
+      subTabClicks,
+      skipped: statsSubTabsSkipped,
+    } = await collectStatsSubTabTexts(statsRoot);
     textByTab.statsSubTabs = textBySubTab;
     textByTab.statsSubTabClicks = subTabClicks;
     textByTab.statsSubTabMerged = mergeStatsSubTabTexts(textBySubTab);
@@ -338,7 +407,7 @@
       textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
     }
 
-    return { textByTab, tabClicks, statsSubTabClicks: subTabClicks };
+    return { textByTab, tabClicks, statsSubTabClicks: subTabClicks, statsSubTabsSkipped };
   }
 
   function isScrollableElement(el) {
@@ -948,7 +1017,8 @@
     stepAt = Date.now();
 
     const extractedAt = new Date().toISOString();
-    const { textByTab, tabClicks, statsSubTabClicks } = await collectSidePanelTexts();
+    const { textByTab, tabClicks, statsSubTabClicks, statsSubTabsSkipped } =
+      await collectSidePanelTexts();
     const pageText = getAllVisibleText();
     const sideText = Object.values(textByTab).filter(Boolean).join("\n---SIDE-TAB---\n");
     const visibleText = sideText ? `${pageText}\n---PAGE---\n${sideText}` : pageText;
@@ -958,7 +1028,10 @@
       detail: [
         SIDE_PANEL_TAB_KEYS.map((k) => `${k}=${tabClicks[k] ? "ok" : "miss"}`).join(", "),
         `subtabs=${STATS_SUB_TAB_KEYS.filter((k) => statsSubTabClicks?.[k]).join(",") || "none"}`,
-      ].join(" | "),
+        statsSubTabsSkipped ? `subtabsSkip=${statsSubTabsSkipped}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | "),
       ms: Date.now() - stepAt,
     });
     stepAt = Date.now();
