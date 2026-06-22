@@ -23,27 +23,48 @@ const networkParse = stripModuleSyntax(
 );
 const urlHelpers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-url.js"), "utf8"));
 const parsers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-parsers.js"), "utf8"));
+const sidePanel = stripModuleSyntax(
+  readFileSync(join(root, "lib/bet365-side-panel.js"), "utf8")
+);
+const marketTabs = stripModuleSyntax(
+  readFileSync(join(root, "lib/bet365-market-tabs.js"), "utf8")
+);
 const format = stripModuleSyntax(readFileSync(join(root, "lib/bet365-format.js"), "utf8"));
 const zip = stripModuleSyntax(readFileSync(join(root, "lib/bet365-zip.js"), "utf8"));
 
 const pageSniffer = readFileSync(join(root, "templates/network-page-sniffer.js"), "utf8");
 const network = readFileSync(join(root, "templates/network-snippet.js"), "utf8").replace(
   "/* __INSTALL_SNIFFER__ */",
-  "initNetworkBridge();"
+  `initNetworkBridge();\n  const __BET365_PAGE_SNIFFER_SOURCE__ = ${JSON.stringify(pageSniffer)};`
 );
 const frames = readFileSync(join(root, "templates/frame-utils-snippet.js"), "utf8");
 const extTemplate = readFileSync(join(root, "templates/extension-content.js"), "utf8");
-const content = extTemplate
-  .replace(
-    "/* __PARSERS__ */",
-    `${marketInference}\n\n${protocolDecode}\n\n${networkParse}\n\n${urlHelpers}\n\n${parsers}`
-  )
-  .replace("/* __NETWORK__ */", network)
-  .replace("/* __FRAMES__ */", frames);
+const parserBundle = [
+  marketInference,
+  protocolDecode,
+  networkParse,
+  urlHelpers,
+  parsers,
+  marketTabs,
+  sidePanel,
+].join("\n\n");
+const inject = (source, marker, chunk) =>
+  source.split(marker).join(chunk);
+const content = inject(
+  inject(inject(extTemplate, "/* __PARSERS__ */", parserBundle), "/* __NETWORK__ */", network),
+  "/* __FRAMES__ */",
+  frames
+);
 
 mkdirSync(join(root, "extension/dist"), { recursive: true });
 writeFileSync(join(root, "extension/dist/content.js"), content);
-writeFileSync(join(root, "extension/dist/zip-utils.js"), `${format}\n\n${zip}\n`);
+const zipUtils = `${format}\n\n${zip}\n
+globalThis.buildZipEntries = buildZipEntries;
+globalThis.buildZipFilename = buildZipFilename;
+globalThis.buildZipMeta = buildZipMeta;
+globalThis.sanitizeDownloadFilename = sanitizeDownloadFilename;
+`;
+writeFileSync(join(root, "extension/dist/zip-utils.js"), zipUtils);
 writeFileSync(join(root, "extension/dist/network-page-sniffer.js"), pageSniffer);
 
 console.log("built extension/dist/content.js");

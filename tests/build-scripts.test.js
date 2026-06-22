@@ -71,6 +71,8 @@ describe("build output", () => {
     assert.match(source, /function formatBet365DebugLogs/);
     assert.match(source, /function formatBet365TraceLogs/);
     assert.match(source, /trace\.txt/);
+    assert.match(source, /globalThis\.buildZipFilename/);
+    assert.match(source, /globalThis\.buildZipEntries/);
   });
 
   it("index-autorun.html embute o bundle auto-run completo", () => {
