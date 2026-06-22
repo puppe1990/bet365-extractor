@@ -113,6 +113,8 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /getSidePanelText/);
     assert.match(template, /findSidePanelRoot/);
     assert.match(template, /scrollTimelinePanel/);
+    assert.match(template, /clickTimelineExpandTotals/);
+    assert.match(template, /isTimelineExpandTotalsText/);
     assert.match(template, /findTimelinePanelRoot/);
     assert.match(template, /collectTimelineScrollTargets/);
     assert.match(template, /scrollTimelineRowsIntoView/);

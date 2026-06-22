@@ -7,8 +7,14 @@ import assert from "node:assert/strict";
 import {
   parseTimelineFromText,
   mergeTimelineSectionTexts,
+  buildTimelineFromPanelTexts,
+  reconcileTimelineCorners,
+  parseCornerTimelineHintsFromText,
+  parseEscanteiosCountFromStatsText,
+  parseCornerOrdinal,
   scoreTimelinePanelText,
   isTimelineRowText,
+  isTimelineExpandTotalsText,
   parseLineupFromText,
   parseLineupFromNetworkBlob,
   parsePlayerFinalizationsFromText,
@@ -44,6 +50,72 @@ describe("isTimelineRowText", () => {
     assert.equal(isTimelineRowText("8'"), true);
     assert.equal(isTimelineRowText("1º Escanteio"), true);
     assert.equal(isTimelineRowText("Ataques Perigosos"), false);
+  });
+});
+
+describe("parseEscanteiosCountFromStatsText", () => {
+  it("extrai totais da aba Escanteios", () => {
+    const count = parseEscanteiosCountFromStatsText(readFixture("stats-subtab-escanteios.txt"));
+    assert.equal(count?.home, 5);
+    assert.equal(count?.away, 3);
+    assert.equal(count?.total, 8);
+  });
+});
+
+describe("reconcileTimelineCorners", () => {
+  it("reloca 1° escanteio do minuto do gol para 8' quando a linha existe", () => {
+    const events = [
+      { minute: 15, type: "goal", description: "1° Goal | Mbappe", source: "visible-text" },
+      { minute: 15, type: "corner", description: "1° Escanteio", source: "visible-text" },
+      { minute: 31, type: "corner", description: "2° Escanteio", source: "visible-text" },
+      { minute: 7, type: "card", description: "1° Cartão Amarelo", source: "visible-text" },
+    ];
+    const section = ["15'", "8'", "1° Escanteio", "7'"];
+    const out = reconcileTimelineCorners(events, section, { fullText: section.join("\n") });
+    const first = out.find((e) => e.type === "corner" && parseCornerOrdinal(e.description) === 1);
+
+    assert.equal(first?.minute, 8);
+    assert.ok(!out.some((e) => e.type === "corner" && e.minute === 15));
+  });
+
+  it("infere 1° escanteio via stats quando só o 2° foi capturado", () => {
+    const events = [
+      { minute: 31, type: "corner", description: "2° Escanteio", source: "visible-text" },
+      { minute: 7, type: "card", description: "1° Cartão Amarelo", source: "visible-text" },
+    ];
+    const out = reconcileTimelineCorners(events, [], {
+      statsCount: { home: 2, away: 0, total: 2 },
+    });
+    const first = out.find((e) => e.type === "corner" && parseCornerOrdinal(e.description) === 1);
+
+    assert.equal(first?.minute, 8);
+    assert.equal(first?.source, "stats-inferred");
+  });
+});
+
+describe("buildTimelineFromPanelTexts", () => {
+  it("combina cronologia e stats escanteios para inferir 1° escanteio ausente", () => {
+    const timeline = buildTimelineFromPanelTexts({
+      timeline:
+        "Cronologia\n31'\n2° Escanteio\n26'\nSubstituição\n15'\n1° Goal\nMbappe - Chute\n7'\n1° Cartão Amarelo",
+      statsSubTabs: {
+        escanteios: "Escanteios\nEscanteios\n2\n0\nEscanteios a Favor\n2\n0",
+      },
+    });
+    const first = timeline.find(
+      (e) => e.type === "corner" && parseCornerOrdinal(e.description) === 1
+    );
+
+    assert.ok(first);
+    assert.equal(first.minute, 8);
+    assert.equal(first.source, "stats-inferred");
+  });
+});
+
+describe("isTimelineExpandTotalsText", () => {
+  it("detecta botão Exibir Totais da Partida", () => {
+    assert.equal(isTimelineExpandTotalsText("Exibir Totais da Partida"), true);
+    assert.equal(isTimelineExpandTotalsText("31'"), false);
   });
 });
 

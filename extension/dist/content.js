@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.13";
+const VERSION = "3.10.14";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -2668,6 +2668,8 @@ const TIMELINE_PANEL_SCOPE_SELECTORS = [
 const TIMELINE_MINUTE_LINE_RE = /^\d{1,3}['′]?\s*$/;
 const TIMELINE_ROW_SIGNAL_RE =
   /Escanteio|Substitui|Cart[aã]o Amarelo|Cart[aã]o Vermelho|Goal|Gol|Impedimento|P[eê]nalti/i;
+const TIMELINE_CORNER_ORDINAL_RE = /^(\d+)[º°]\s*Escanteio/i;
+const TIMELINE_EXPAND_TOTALS_RE = /^Exibir Totais da Partida$/i;
 
 function scoreTimelinePanelText(text) {
   const s = String(text || "");
@@ -2683,9 +2685,171 @@ function scoreTimelinePanelText(text) {
 function isTimelineRowText(text) {
   const s = normalize(text);
   if (!s || s.length > 80) return false;
+  if (TIMELINE_EXPAND_TOTALS_RE.test(s)) return true;
   if (TIMELINE_MINUTE_LINE_RE.test(s)) return true;
   if (TIMELINE_ROW_SIGNAL_RE.test(s) && !/xG|Ataques|Posse/i.test(s)) return true;
   return false;
+}
+
+function isTimelineExpandTotalsText(text) {
+  return TIMELINE_EXPAND_TOTALS_RE.test(normalize(text));
+}
+
+function parseCornerOrdinal(text) {
+  const m = normalize(text).match(TIMELINE_CORNER_ORDINAL_RE);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function minuteLineValue(line) {
+  const m = normalize(line).match(/^(\d{1,3})['′]?\s*$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function findMinuteNearLine(lines, index, radius = 4) {
+  for (let j = index - 1; j >= Math.max(0, index - radius); j--) {
+    const minute = minuteLineValue(lines[j]);
+    if (minute !== null) return minute;
+  }
+  for (let j = index + 1; j < Math.min(lines.length, index + radius); j++) {
+    const minute = minuteLineValue(lines[j]);
+    if (minute !== null) return minute;
+  }
+  return null;
+}
+
+function makeCornerEvent(minute, description, source) {
+  const desc = normalize(description);
+  return { minute, type: "corner", description: desc, details: [desc], source };
+}
+
+function parseEscanteiosCountFromStatsText(text) {
+  const lines = linesFromText(text).map(normalize).filter(Boolean);
+  let home = null;
+  let away = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^Escanteios$/i.test(lines[i])) continue;
+    const nums = [];
+    for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+      if (/^\d+$/.test(lines[j])) nums.push(parseInt(lines[j], 10));
+      else if (nums.length) break;
+    }
+    if (nums.length >= 2) {
+      home = nums[0];
+      away = nums[1];
+      break;
+    }
+  }
+
+  if (home === null && away === null) return null;
+  return { home: home ?? 0, away: away ?? 0, total: (home ?? 0) + (away ?? 0) };
+}
+
+function parseCornerTimelineHintsFromText(text) {
+  const lines = linesFromText(text).map(normalize).filter(Boolean);
+  const events = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const glued = line.match(/^(\d{1,3})['′]\s+(\d+[º°]\s*Escanteio.*)$/i);
+    if (glued) {
+      events.push(makeCornerEvent(parseInt(glued[1], 10), glued[2], "stats-hint"));
+      continue;
+    }
+    if (!TIMELINE_CORNER_ORDINAL_RE.test(line)) continue;
+    if (isTimelineMarketLeakLine(line) || isTimelineNoiseDetail(line)) continue;
+    const minute = findMinuteNearLine(lines, i);
+    if (minute !== null) events.push(makeCornerEvent(minute, line, "stats-hint"));
+  }
+
+  return events;
+}
+
+function inferMissingCornerMinute(ordinal, events, allLines, maxMinute = 45) {
+  const used = new Set(events.filter((e) => e.minute).map((e) => e.minute));
+  const minuteLines = allLines.map(minuteLineValue).filter((m) => m !== null && !used.has(m));
+  const second = events.find((e) => e.type === "corner" && parseCornerOrdinal(e.description) === 2);
+  const card7 = events.find((e) => e.type === "card" && e.minute === 7);
+  const upper = second?.minute || maxMinute;
+
+  if (ordinal === 1 && card7 && minuteLines.some((m) => m === 8)) return 8;
+
+  const gap = minuteLines.filter((m) => m > 7 && m < upper).sort((a, b) => a - b);
+  if (gap.length) return gap[0];
+  if (ordinal === 1 && card7 && upper > 7) return 8;
+  return null;
+}
+
+function reconcileTimelineCorners(events, sectionLines = [], options = {}) {
+  const allLines = (sectionLines.length ? sectionLines : linesFromText(options.fullText || ""))
+    .map(normalize)
+    .filter(Boolean);
+  const fullText = String(options.fullText || "");
+  const statsCount =
+    options.statsCount ||
+    parseEscanteiosCountFromStatsText(fullText) ||
+    parseEscanteiosCountFromStatsText(options.escanteiosText || "");
+
+  let out = [...events];
+  const hasEight = allLines.some((l) => minuteLineValue(l) === 8);
+
+  if (hasEight) {
+    out = out.map((e) => {
+      if (e.type !== "corner" || parseCornerOrdinal(e.description) !== 1) return e;
+      const goalAtSame = out.some((g) => g.type === "goal" && g.minute === e.minute);
+      if (goalAtSame && e.minute === 15) {
+        return { ...e, minute: 8, source: `${e.source || "visible-text"}-relocated` };
+      }
+      return e;
+    });
+  }
+
+  const coveredOrdinals = new Set(
+    out.filter((e) => e.type === "corner").map((e) => parseCornerOrdinal(e.description)).filter(Boolean)
+  );
+
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i];
+    const ordinal = parseCornerOrdinal(line);
+    if (!ordinal || coveredOrdinals.has(ordinal)) continue;
+    if (isTimelineMarketLeakLine(line) || isTimelineNoiseDetail(line)) continue;
+
+    let minute = findMinuteNearLine(allLines, i);
+    if (
+      minute === 15 &&
+      ordinal === 1 &&
+      out.some((g) => g.type === "goal" && g.minute === 15)
+    ) {
+      minute = inferMissingCornerMinute(ordinal, out, allLines);
+    }
+    if (minute === null && ordinal === 1 && hasEight) minute = 8;
+    if (minute !== null) {
+      out.push(makeCornerEvent(minute, line, "visible-text-recovered"));
+      coveredOrdinals.add(ordinal);
+    }
+  }
+
+  if (statsCount?.total) {
+    const cornerEvents = out.filter((e) => e.type === "corner");
+    const missing = statsCount.total - cornerEvents.length;
+    if (missing > 0 && missing <= 2) {
+      for (let ordinal = 1; ordinal <= statsCount.total; ordinal++) {
+        if (coveredOrdinals.has(ordinal)) continue;
+        const hasHigher = cornerEvents.some((e) => {
+          const o = parseCornerOrdinal(e.description);
+          return o !== null && o > ordinal;
+        });
+        if (ordinal > 1 && !hasHigher) continue;
+        const minute = inferMissingCornerMinute(ordinal, out, allLines);
+        if (minute !== null) {
+          out.push(makeCornerEvent(minute, `${ordinal}° Escanteio`, "stats-inferred"));
+          coveredOrdinals.add(ordinal);
+        }
+      }
+    }
+  }
+
+  return dedupeTimelineEvents(out);
 }
 
 const PLAYER_SHORT_NAME_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;
@@ -2990,10 +3154,48 @@ function parseTimelineLines(lines) {
   return events;
 }
 
-function parseTimelineFromText(text) {
+function parseTimelineFromText(text, options = {}) {
   const section = extractTimelineSectionLines(text);
-  if (section?.length) return dedupeTimelineEvents(parseTimelineLines(section));
-  return dedupeTimelineEvents(parseTimelineLines(linesFromText(text)));
+  const lines = section?.length ? section : linesFromText(text);
+  let events = dedupeTimelineEvents(parseTimelineLines(lines));
+  if (options.reconcile !== false) {
+    events = reconcileTimelineCorners(events, section || lines, {
+      fullText: text,
+      escanteiosText: options.escanteiosText,
+      statsCount: options.statsCount,
+    });
+  }
+  return events;
+}
+
+function buildTimelineFromPanelTexts(textByTab = {}) {
+  const statsSubTabMerged = textByTab.statsSubTabMerged || "";
+  const escanteiosText = textByTab.statsSubTabs?.escanteios || "";
+  const statsText = [
+    textByTab.stats || "",
+    textByTab.goalScorers || "",
+    textByTab.lateral || "",
+    statsSubTabMerged,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const timelineText = textByTab.timeline || "";
+  const allText = [timelineText, statsText, escanteiosText].filter(Boolean).join("\n");
+  const statsCount = parseEscanteiosCountFromStatsText(escanteiosText || statsText);
+  const reconcileOpts = { fullText: allText, escanteiosText, statsCount };
+
+  const events = mergeTimelineEvents(
+    parseTimelineFromText(timelineText, { ...reconcileOpts, reconcile: false }),
+    parseTimelineFromText(statsText, { ...reconcileOpts, reconcile: false }),
+    parseCornerTimelineHintsFromText(escanteiosText),
+    parseCornerTimelineHintsFromText(statsText),
+    parseCornerTimelineHintsFromText(allText)
+  );
+  const section =
+    extractTimelineSectionLines(timelineText) ||
+    extractTimelineSectionLines(allText) ||
+    linesFromText(allText);
+  return reconcileTimelineCorners(events, section, reconcileOpts);
 }
 
 function mergeTimelineEvents(...lists) {
@@ -3394,10 +3596,7 @@ function extractSidePanelFromTexts(textByTab = {}) {
   const panelMerged = [statsText, playerText, timelineText, lineupText].join("\n");
 
   return {
-    timeline: mergeTimelineEvents(
-      parseTimelineFromText(timelineText),
-      parseTimelineFromText(statsText)
-    ),
+    timeline: buildTimelineFromPanelTexts(textByTab),
     lineup:
       parseLineupFromText(lineupText) ||
       parseLineupFromText(statsText) ||
@@ -3451,6 +3650,16 @@ function scanNetworkSidePanel(networkLog = []) {
       /(\d{1,3})['′]?\s*(?:º|°)?\s*(Gol|Goal|Escanteio|Corner|Impedimento|Offside|Pênalti|Penalti)/gi
     )) {
       pushEvent(parseInt(m[1], 10), inferTimelineType([m[2]]), m[2], "network-text");
+    }
+
+    for (const m of data.matchAll(
+      /(\d{1,3})['′](?:[^'|;\n]{0,48}?)(\d+[º°]\s*(?:Escanteio|Corner))/gi
+    )) {
+      pushEvent(parseInt(m[1], 10), "corner", m[2], "network-text");
+    }
+
+    for (const m of data.matchAll(/(\d+[º°]\s*(?:Escanteio|Corner))[^'|;\n]{0,48}?(\d{1,3})['′]/gi)) {
+      pushEvent(parseInt(m[2], 10), "corner", m[1], "network-text");
     }
 
     for (const m of data.matchAll(/NA=([^|;\x00-\x1f]{2,40})/g)) {
@@ -4553,6 +4762,30 @@ function collectFrameWalkTexts() {
     return out.sort((a, b) => scoreTimelineScrollTarget(b) - scoreTimelineScrollTarget(a));
   }
 
+  async function clickTimelineExpandTotals(root) {
+    let clicked = false;
+    const tryClick = (el) => {
+      if (clicked || !el) return;
+      const t = normalize(el.innerText || el.textContent || "");
+      if (!isTimelineExpandTotalsText(t)) return;
+      dispatchPanelClick(el);
+      clicked = true;
+    };
+
+    walkElementsWithin(root, tryClick);
+    if (!clicked) {
+      queryDeep("button, [role='button'], a, span, div").forEach((el) => {
+        if (clicked) return;
+        const rect = el.getBoundingClientRect?.();
+        if (!rect || rect.width < 8 || rect.height < 8) return;
+        if (rect.left < window.innerWidth * 0.35) return;
+        tryClick(el);
+      });
+    }
+    if (clicked) await delay(220);
+    return clicked;
+  }
+
   async function scrollTimelineRowsIntoView(root) {
     const rows = [];
     walkElementsWithin(root, (el) => {
@@ -4583,6 +4816,7 @@ function collectFrameWalkTexts() {
       if (merged) snapshots.push(merged);
     };
 
+    const expandClicked = await clickTimelineExpandTotals(root);
     capture(root);
 
     const targets = collectTimelineScrollTargets(root).slice(0, 4);
@@ -4620,6 +4854,7 @@ function collectFrameWalkTexts() {
     return {
       text: merged || snapshots[0] || "",
       scrollSteps: snapshots.length,
+      expandClicked,
       container: String(targets[0]?.className || root.className || "timeline-scroll").slice(0, 80),
     };
   }
@@ -5358,6 +5593,7 @@ function collectFrameWalkTexts() {
         `subtabs=${STATS_SUB_TAB_KEYS.filter((k) => statsSubTabClicks?.[k]).join(",") || "none"}`,
         statsSubTabsSkipped ? `subtabsSkip=${statsSubTabsSkipped}` : null,
         timelineScrollMeta?.scrollSteps ? `timelineScroll=${timelineScrollMeta.scrollSteps}` : null,
+        timelineScrollMeta?.expandClicked ? "timelineExpand=ok" : null,
       ]
         .filter(Boolean)
         .join(" | "),

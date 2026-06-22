@@ -508,6 +508,30 @@
     return out.sort((a, b) => scoreTimelineScrollTarget(b) - scoreTimelineScrollTarget(a));
   }
 
+  async function clickTimelineExpandTotals(root) {
+    let clicked = false;
+    const tryClick = (el) => {
+      if (clicked || !el) return;
+      const t = normalize(el.innerText || el.textContent || "");
+      if (!isTimelineExpandTotalsText(t)) return;
+      dispatchPanelClick(el);
+      clicked = true;
+    };
+
+    walkElementsWithin(root, tryClick);
+    if (!clicked) {
+      queryDeep("button, [role='button'], a, span, div").forEach((el) => {
+        if (clicked) return;
+        const rect = el.getBoundingClientRect?.();
+        if (!rect || rect.width < 8 || rect.height < 8) return;
+        if (rect.left < window.innerWidth * 0.35) return;
+        tryClick(el);
+      });
+    }
+    if (clicked) await delay(220);
+    return clicked;
+  }
+
   async function scrollTimelineRowsIntoView(root) {
     const rows = [];
     walkElementsWithin(root, (el) => {
@@ -538,6 +562,7 @@
       if (merged) snapshots.push(merged);
     };
 
+    const expandClicked = await clickTimelineExpandTotals(root);
     capture(root);
 
     const targets = collectTimelineScrollTargets(root).slice(0, 4);
@@ -575,6 +600,7 @@
     return {
       text: merged || snapshots[0] || "",
       scrollSteps: snapshots.length,
+      expandClicked,
       container: String(targets[0]?.className || root.className || "timeline-scroll").slice(0, 80),
     };
   }
@@ -1313,6 +1339,7 @@
         `subtabs=${STATS_SUB_TAB_KEYS.filter((k) => statsSubTabClicks?.[k]).join(",") || "none"}`,
         statsSubTabsSkipped ? `subtabsSkip=${statsSubTabsSkipped}` : null,
         timelineScrollMeta?.scrollSteps ? `timelineScroll=${timelineScrollMeta.scrollSteps}` : null,
+        timelineScrollMeta?.expandClicked ? "timelineExpand=ok" : null,
       ]
         .filter(Boolean)
         .join(" | "),
