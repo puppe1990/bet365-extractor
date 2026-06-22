@@ -1,0 +1,7 @@
+node_modules/
+extension/dist/
+extension/vendor/
+outputs/
+bet365-autorun-bundle.js
+index-autorun.html
+package-lock.json

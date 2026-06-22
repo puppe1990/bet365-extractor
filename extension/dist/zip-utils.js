@@ -1,18 +1,34 @@
-function buildBet365Slug(data) {
-  const m = data?.match || {};
-  const slug = [m.homeTeam, m.awayTeam]
-    .filter(Boolean)
-    .join("-")
+function slugifyFilenamePart(text) {
+  if (!text) return null;
+  return String(text)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w-]+/g, "")
+    .replace(/[^\w\s-]+/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
     .toLowerCase();
-  return slug || "bet365";
+}
+
+function buildBet365Slug(data) {
+  const m = data?.match || {};
+  const parts = [m.homeTeam, m.awayTeam]
+    .filter(Boolean)
+    .map((team) => slugifyFilenamePart(team))
+    .filter(Boolean);
+  return parts.join("-") || "jogo";
 }
 
 function buildBet365Filename(data, ext, isoDate = new Date().toISOString()) {
-  const ts = isoDate.replace(/[:.]/g, "-");
-  return `bet365-${buildBet365Slug(data)}-${ts}.${ext}`;
+  const m = data?.match || {};
+  const competition = slugifyFilenamePart(m.competition) || "campeonato";
+  const game = buildBet365Slug(data);
+  const score = slugifyFilenamePart(m.score) || "sem-placar";
+  const ts = (m.extractedAt || isoDate)
+    .replace(/\.\d{3}Z?$/i, "")
+    .replace(/Z$/i, "")
+    .replace("T", "_")
+    .replace(/:/g, "-");
+  return `${competition}-${game}-${score}-${ts}.${ext}`;
 }
 
 function formatBet365Logs(data) {
@@ -61,6 +77,60 @@ function formatBet365Logs(data) {
     lines.push("", "--- INFERÊNCIA MERCADOS ---", ...inference.reasons);
   }
 
+  const sidePanel = data?.sidePanel || {};
+  const timeline = sidePanel.timeline || [];
+  const lineup = sidePanel.lineup;
+  const finals = sidePanel.playerFinalizations || [];
+  const areas = sidePanel.actionAreas;
+
+  lines.push(
+    "",
+    "--- PAINEL LATERAL ---",
+    `Cronologia: ${timeline.length} evento(s)`,
+    `Escalação: ${
+      lineup
+        ? `casa ${lineup.home?.starters?.length ?? 0} tit. / fora ${lineup.away?.starters?.length ?? 0} tit.`
+        : "não capturada"
+    }`,
+    `Finalizações: ${finals.length} jogador(es)`,
+    areas
+      ? `Áreas de Ação: E ${areas.left} | C ${areas.center} | D ${areas.right}`
+      : "Áreas de Ação: —"
+  );
+
+  if (timeline.length) {
+    lines.push(
+      "",
+      "--- CRONOLOGIA ---",
+      ...timeline.map(
+        (e) => `${e.minute ?? "?"}' [${e.type}] ${e.description} (${e.source || "?"})`
+      )
+    );
+  }
+
+  if (finals.length) {
+    lines.push(
+      "",
+      "--- FINALIZAÇÕES ---",
+      ...finals.map((r) => `${r.player}: ${r.shots} chutes, ${r.onTarget} no gol`)
+    );
+  }
+
+  if (lineup) {
+    lines.push(
+      "",
+      "--- ESCALAÇÃO (casa) ---",
+      ...(lineup.home?.starters || []).map((p) => `  ${p}`),
+      "Suplentes:",
+      ...(lineup.home?.subs || []).map((p) => `  ${p}`),
+      "",
+      "--- ESCALAÇÃO (fora) ---",
+      ...(lineup.away?.starters || []).map((p) => `  ${p}`),
+      "Suplentes:",
+      ...(lineup.away?.subs || []).map((p) => `  ${p}`)
+    );
+  }
+
   lines.push(
     "",
     "--- STATS ---",
@@ -94,6 +164,9 @@ function formatBet365DebugLogs(data) {
     `visibleTextLength: ${meta.visibleTextLength ?? debug.visibleTextLength ?? "—"}`,
     `statsCount: ${meta.statsCount ?? data.stats?.length ?? 0}`,
     `oddsCount: ${meta.oddsCount ?? data.odds?.length ?? 0}`,
+    `sidePanelTimeline: ${meta.sidePanelTimelineCount ?? data.sidePanel?.timeline?.length ?? 0}`,
+    `sidePanelLineup: ${(meta.sidePanelLineupCaptured ?? Boolean(data.sidePanel?.lineup)) ? "yes" : "no"}`,
+    `sidePanelFinalizations: ${meta.sidePanelFinalizationsCount ?? data.sidePanel?.playerFinalizations?.length ?? 0}`,
     "",
     "--- PLACAR ---",
     `score: ${m.score ?? "—"}`,
@@ -199,8 +272,15 @@ function formatBet365DebugLogs(data) {
     debug.networkSamples.forEach((n, i) => {
       lines.push(`${i + 1}. [${n.kind || "?"}] ${n.url}`);
       if (n.rawLen != null) lines.push(`    rawLen: ${n.rawLen}`);
+      if (n.isIpeBlob) lines.push(`    ipeBlob: yes`);
       if (n.fieldKeys?.length) lines.push(`    fields: ${n.fieldKeys.join(", ")}`);
-      if (n.wireMatch) lines.push(`    wireMatch: ${n.wireMatch.score} @ ${n.wireMatch.clock ?? "—"}`);
+      if (n.lineupPlayersCount != null) {
+        lines.push(`    hintLineupPlayers: ${n.lineupPlayersCount}`);
+        if (n.lineupPlayers?.length) lines.push(`    hintPlayers: ${n.lineupPlayers.join(", ")}`);
+      }
+      if (n.naSamples?.length) lines.push(`    naSamples: ${n.naSamples.join(", ")}`);
+      if (n.wireMatch)
+        lines.push(`    wireMatch: ${n.wireMatch.score} @ ${n.wireMatch.clock ?? "—"}`);
       if (n.wireMatches?.length) lines.push(`    wireScores: ${JSON.stringify(n.wireMatches)}`);
       if (n.wireClocks?.length) lines.push(`    wireClocks: ${n.wireClocks.join(", ")}`);
       if (n.keys?.length) lines.push(`    keys: ${n.keys.join(", ")}`);
@@ -237,6 +317,80 @@ function formatBet365DebugLogs(data) {
       lines.push(
         `${p.step}: ${p.detail ?? ""}${p.ms != null ? ` (${p.ms}ms)` : ""}${p.count != null ? ` count=${p.count}` : ""}`
       );
+    });
+  }
+
+  const sidePanel = data?.sidePanel || {};
+  if (sidePanel.tabCapture && Object.keys(sidePanel.tabCapture).length) {
+    lines.push("", "--- SIDE PANEL TABS ---");
+    Object.entries(sidePanel.tabCapture).forEach(([k, v]) => {
+      lines.push(`${k}: len=${v.length} captured=${v.captured}`);
+    });
+  }
+  if (sidePanel.timeline?.length) {
+    lines.push("", "--- SIDE PANEL TIMELINE ---");
+    sidePanel.timeline.forEach((e, i) => {
+      lines.push(`${i + 1}. ${e.minute ?? "?"}' [${e.type}] ${e.description} (${e.source})`);
+    });
+  }
+  if (sidePanel.network?.playerNames?.length) {
+    lines.push("", "--- SIDE PANEL NETWORK HINTS ---", sidePanel.network.playerNames.join(", "));
+  }
+
+  if (debug.sidePanelBlobDebug?.length) {
+    lines.push("", "--- LINEUP WIRE DEBUG ---");
+    debug.sidePanelBlobDebug.forEach((b, i) => {
+      const isZap = b.source === "zap-ws";
+      const label = isZap ? "zap-ws" : "ipe/5378";
+      if (isZap) {
+        lines.push(
+          `${i + 1}. [${label}] messages=${b.messageCount ?? 0} mergedLen=${b.mergedLen ?? "—"} largest=${b.largestMessage ?? "—"} hintLineup=${b.hintLineupCount ?? 0} wirePlayers=${b.wirePlayerCount ?? 0} lineupParsed=${b.lineupParsed ? "yes" : "no"}`
+        );
+      } else {
+        lines.push(
+          `${i + 1}. [${label}] [${b.kind || "?"}] rawLen=${b.rawLen ?? "—"} storedLen=${b.storedLen ?? "—"} hintLineup=${b.hintLineupCount ?? 0} wirePlayers=${b.wirePlayerCount ?? 0} naPlayerLike=${b.naPlayerLikeCount ?? 0} lineupParsed=${b.lineupParsed ? "yes" : "no"}`
+        );
+      }
+      if (b.url) lines.push(`    url: ${b.url}`);
+      if (b.fieldKeys?.length) lines.push(`    fields: ${b.fieldKeys.join(", ")}`);
+      if (b.hintLineupPlayers?.length) {
+        lines.push(`    hintLineupPlayers: ${b.hintLineupPlayers.map((p) => p.name).join(", ")}`);
+      }
+      if (b.wirePlayers?.length) {
+        lines.push(
+          `    wirePlayers: ${b.wirePlayers.map((p) => `${p.name}${p.team != null ? `(T${p.team})` : ""}`).join(", ")}`
+        );
+      }
+      if (b.naSamples?.length) {
+        const sample = b.naSamples
+          .filter((s) => s.playerLike)
+          .map((s) => s.name)
+          .slice(0, 16);
+        if (sample.length) lines.push(`    naPlayerLike: ${sample.join(", ")}`);
+        const junk = b.naSamples
+          .filter((s) => !s.playerLike)
+          .map((s) => s.name)
+          .slice(0, 8);
+        if (junk.length) lines.push(`    naOther: ${junk.join(", ")}`);
+      }
+      if (b.messageSamples?.length) {
+        b.messageSamples.slice(0, 3).forEach((m, j) => {
+          lines.push(`    msg[${j}]: rawLen=${m.rawLen ?? "—"} ${m.preview ?? ""}`);
+        });
+      }
+      if (b.wireRecordSamples?.length) {
+        lines.push(`    wireRecord[0]: ${b.wireRecordSamples[0]}`);
+      }
+      if (b.lineupStarters) {
+        lines.push(
+          `    lineupStarters: home=${b.lineupStarters.home} away=${b.lineupStarters.away} (${b.lineupStarters.source})`
+        );
+      }
+      if (b.finalsCount) {
+        lines.push(
+          `    finals: ${b.finalsSample?.map((f) => `${f.player} ${f.shots}/${f.onTarget}`).join(", ")}`
+        );
+      }
     });
   }
 
@@ -316,7 +470,37 @@ function formatBet365TraceLogs(data) {
   if (debug.networkSamples?.length) {
     lines.push("", "--- NETWORK ---");
     debug.networkSamples.forEach((n, i) => {
-      lines.push(`${i + 1}. [${n.kind || "?"}] ${n.at ?? "?"} | ${n.url}`);
+      const extra = n.isZapWs
+        ? ` zap hintLineup=${n.lineupPlayersCount ?? 0} buf=${n.zapBufferLen ?? "—"}`
+        : n.isIpeBlob
+          ? ` ipe hintLineup=${n.lineupPlayersCount ?? 0}`
+          : "";
+      lines.push(`${i + 1}. [${n.kind || "?"}] ${n.at ?? "?"} | ${n.url}${extra}`);
+    });
+  }
+
+  if (debug.sidePanelBlobDebug?.length) {
+    lines.push("", "--- LINEUP WIRE ---");
+    debug.sidePanelBlobDebug.forEach((b, i) => {
+      const isZap = b.source === "zap-ws";
+      const src = isZap ? "zap-ws" : "ipe/5378";
+      if (isZap) {
+        lines.push(
+          `${i + 1}. [${src}] msgs=${b.messageCount ?? 0} merged=${b.mergedLen ?? "—"} hint=${b.hintLineupCount ?? 0} wire=${b.wirePlayerCount ?? 0} parsed=${b.lineupParsed ? "yes" : "no"}`
+        );
+      } else {
+        lines.push(
+          `${i + 1}. [${src}] hint=${b.hintLineupCount ?? 0} wire=${b.wirePlayerCount ?? 0} naLike=${b.naPlayerLikeCount ?? 0} parsed=${b.lineupParsed ? "yes" : "no"} rawLen=${b.rawLen ?? "—"}`
+        );
+      }
+      if (b.hintLineupPlayers?.length) {
+        lines.push(
+          `    hints: ${b.hintLineupPlayers
+            .map((p) => p.name)
+            .slice(0, 8)
+            .join(", ")}`
+        );
+      }
     });
   }
 
@@ -363,6 +547,12 @@ function buildZipMeta(data) {
     scoreWarnings: meta.scoreWarnings || m.scoreWarnings || [],
     statsCount: (data?.stats || []).length,
     oddsCount: (data?.odds || []).length,
+    sidePanelTimelineCount: meta.sidePanelTimelineCount ?? data?.sidePanel?.timeline?.length ?? 0,
+    sidePanelLineupCaptured: meta.sidePanelLineupCaptured ?? Boolean(data?.sidePanel?.lineup),
+    sidePanelFinalizationsCount:
+      meta.sidePanelFinalizationsCount ?? data?.sidePanel?.playerFinalizations?.length ?? 0,
+    sidePanelActionAreas: meta.sidePanelActionAreas ?? data?.sidePanel?.actionAreas ?? null,
+    leftColumnScrollSteps: meta.leftColumnScrollSteps ?? null,
     visibleTextLength: meta.visibleTextLength ?? null,
     frameTextsScanned: meta.frameTextsScanned ?? null,
     rootsScanned: meta.rootsScanned ?? null,
@@ -397,6 +587,21 @@ function buildZipEntries(data) {
   ];
 }
 
-function buildZipFilename(data, isoDate = new Date().toISOString()) {
-  return buildBet365Filename(data, "zip", isoDate);
+function sanitizeDownloadFilename(name, fallback = "bet365-extract.zip") {
+  const raw = String(name || "").trim() || fallback;
+  const safe = raw
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return safe || fallback;
 }
+
+function buildZipFilename(data, isoDate = new Date().toISOString()) {
+  return sanitizeDownloadFilename(buildBet365Filename(data, "zip", isoDate));
+}
+
+globalThis.buildZipEntries = buildZipEntries;
+globalThis.buildZipFilename = buildZipFilename;
+globalThis.buildZipMeta = buildZipMeta;
+globalThis.sanitizeDownloadFilename = sanitizeDownloadFilename;

@@ -1,0 +1,7 @@
+Estat.
+0.86 xG 0.23
+Ataques 32 31
+Ataques Perigosos 12 26
+% de Posse 58 42
+Áreas de Ação 27.3% 55.4% 17.3%
+Passes Chave 0 2

@@ -4,10 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import {
-  isBet365PreMatchUrl,
-  isBet365LiveUrl,
-} from "../lib/bet365-url.js";
+import { isBet365PreMatchUrl, isBet365LiveUrl } from "../lib/bet365-url.js";
 import {
   extractStatsFromVisibleText,
   parseMatchFromLines,
@@ -19,13 +16,9 @@ import {
 } from "../lib/bet365-parsers.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const PREMATCH_URL =
-  "https://www.bet365.bet.br/#/AC/B1/C1/D8/E194699812/F3/I1/";
+const PREMATCH_URL = "https://www.bet365.bet.br/#/AC/B1/C1/D8/E194699812/F3/I1/";
 const LIVE_URL = "https://www.bet365.bet.br/#/IP/EV151352326532C1/";
-const FIXTURE = readFileSync(
-  join(__dir, "fixtures/nz-egypt-prematch.txt"),
-  "utf8"
-);
+const FIXTURE = readFileSync(join(__dir, "fixtures/nz-egypt-prematch.txt"), "utf8");
 
 describe("isBet365PreMatchUrl", () => {
   it("identifica pré-jogo #/AC/.../E...", () => {
@@ -44,10 +37,10 @@ describe("pré-jogo Nova Zelândia x Egito", () => {
     const fromLines = parseMatchFromLines(FIXTURE, "2026-06-21T12:00:00.000Z");
     assert.equal(fromLines?.score, "2-4");
 
-    const resolved = resolveMatchForPage(
-      [{ ...fromLines, source: "visible-lines" }],
-      { extractedAt: "2026-06-21T12:00:00.000Z", pageUrl: PREMATCH_URL }
-    );
+    const resolved = resolveMatchForPage([{ ...fromLines, source: "visible-lines" }], {
+      extractedAt: "2026-06-21T12:00:00.000Z",
+      pageUrl: PREMATCH_URL,
+    });
 
     assert.equal(resolved?.score, null);
     assert.equal(resolved?.clock, null);

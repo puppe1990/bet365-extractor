@@ -6,11 +6,11 @@ Extensão Chrome e scripts de console para extrair **placar, relógio, estatíst
 
 ## O que extrai
 
-| Dado | Fonte principal |
-|------|-----------------|
-| Placar e relógio | DOM do painel lateral (`dom-scoreboard`) |
-| Estatísticas | Texto colado da aba Estat. |
-| Odds | DOM dos mercados |
+| Dado               | Fonte principal                                                |
+| ------------------ | -------------------------------------------------------------- |
+| Placar e relógio   | DOM do painel lateral (`dom-scoreboard`)                       |
+| Estatísticas       | Texto colado da aba Estat.                                     |
+| Odds               | DOM dos mercados                                               |
 | Rede (diagnóstico) | fetch / XHR / WebSocket (`sportspublisher/zap`, `/Api/1/Blob`) |
 
 O ZIP inclui: `data.json`, `logs.txt`, `debug.txt`, `trace.txt`, `meta.json`.

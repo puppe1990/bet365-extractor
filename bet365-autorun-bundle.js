@@ -48,9 +48,7 @@ function scoreTotalFromMatch(match) {
 function isDrawFavored(odds) {
   const rf = (odds || []).filter((o) => /resultado\s*final/i.test(o.market));
   const empate = rf.find((o) => /^empate$/i.test(String(o.selection || "").trim()));
-  const home = rf.find(
-    (o) => o !== empate && !/empate/i.test(String(o.selection || ""))
-  );
+  const home = rf.find((o) => o !== empate && !/empate/i.test(String(o.selection || "")));
 
   if (!empate) return false;
 
@@ -100,8 +98,7 @@ function analyzeMarketScore(odds, match) {
     minTotalGoals,
     domTotalGoals,
     drawFavored,
-    consistent:
-      domTotalGoals == null || minTotalGoals == null || domTotalGoals >= minTotalGoals,
+    consistent: domTotalGoals == null || minTotalGoals == null || domTotalGoals >= minTotalGoals,
     reasons: [],
   };
 
@@ -457,9 +454,7 @@ function extractScoresFromNetworkText(text) {
         score: `${home}-${away}`,
         scoreHome: home,
         scoreAway: away,
-        clock: extractClockFromNetworkText(
-          text.slice(Math.max(0, m.index - 80), m.index + 120)
-        ),
+        clock: extractClockFromNetworkText(text.slice(Math.max(0, m.index - 80), m.index + 120)),
       });
     }
   }
@@ -537,7 +532,28 @@ function bet365UrlHint(url) {
 const VERSION = "3.10.5";
 
 const JUNK_ODDS_SELECTIONS =
-  /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento)/i;
+  /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
+
+const SKIP_ODDS_LINES =
+  /^(CA|SUBSTITUIÇÃO\+|Mostrar Mais|Popular|Criar Aposta|Instantâneas|Todos|Ao-Vivo|Jogador\/Contagem|Para Marcar ou Dar Assistência|1°|Jogadores Titulares|Mercado Suspenso|\d+)$/i;
+
+const JUNK_ODDS_MARKETS =
+  /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas)/i;
+
+const TIMELINE_LEAK_MARKET_RE = /^\d+°\s*(?:Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
+
+const TIMELINE_LEAK_SELECTION_RE = /\s-\s(?:Chute|Assist)$/i;
+
+const PLAYER_SHORT_ODDS_NAME_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{0,24}$/;
+
+const LEGAL_FOOTER_MARKET_RE =
+  /\b(CNPJ|Portaria\s+SPA|regulada e autorizada|Sede registrada|©\s*\d{4}|Você não deve utilizar|Jogue com responsabilidade)\b/i;
+
+const BETTING_MARKET_HINTS =
+  /\b(Gol|Gols|Resultado|Chance|Empate|Intervalo|Handicap|Total|Marcador|Chutes|Cartões|Escanteio|Tempo|Aposta|Dupla|Partida|Asiátic)/i;
+
+const STAT_LABEL_RE =
+  /^(Goleiro|Precisão|Finalizações|Ataques|Ataques Perigosos|% de Posse|xG|Áreas de Ação|Passes Chave|Cruzamentos|Escanteios|Impedimentos|Defesas|Posse)\b/i;
 
 const STAT_LABELS = [
   "Finalizações / Chutes ao Gol",
@@ -557,9 +573,34 @@ const STAT_LABELS = [
   "Posse",
 ];
 
+function splitAtaquesPerigososGlued(digits) {
+  const d = String(digits || "");
+  if (!d) return null;
+  if (d.length === 4) {
+    const home = d.slice(0, 2);
+    const away = d.slice(2);
+    const homeN = parseInt(home, 10);
+    const awayN = parseInt(away, 10);
+    if (homeN >= 0 && awayN >= 0 && homeN <= 99 && awayN <= 99) {
+      return { home, away };
+    }
+  }
+  if (d.length === 3) {
+    const tail = parseInt(d.slice(1), 10);
+    if (tail >= 10) return { home: d[0], away: String(tail) };
+    return { home: d.slice(0, 2), away: d[2] };
+  }
+  const m = d.match(/^(\d{1,2})(\d{1,2})$/);
+  return m ? { home: m[1], away: m[2] } : null;
+}
+
 const GLUED_STAT_RULES = [
   { label: "xG", regex: /(\d+\.\d+)xG(\d+\.\d+)/i },
-  { label: "Ataques Perigosos", regex: /AtaquesPerigosos(\d{2})(\d{1,2})/i },
+  {
+    label: "Ataques Perigosos",
+    regex: /AtaquesPerigosos(\d+)(?=%dePosse|%)/i,
+    map: splitAtaquesPerigososGlued,
+  },
   { label: "Ataques", regex: /Ataques(\d{2})(\d{2})(?=AtaquesPerigosos|%)/i },
   { label: "% de Posse", regex: /%dePosse(\d{2})(\d{2})/i },
   {
@@ -606,13 +647,15 @@ function parseGluedStats(text) {
   const stats = [];
   const seen = new Set();
 
-  GLUED_STAT_RULES.forEach(({ label, regex }) => {
+  GLUED_STAT_RULES.forEach(({ label, regex, map }) => {
     const m = flat.match(regex);
     if (!m) return;
-    const key = `${label}|${m[1]}|${m[2]}`;
+    const pair = map ? map(m[1]) : { home: m[1], away: m[2] };
+    if (!pair?.home || pair.away == null) return;
+    const key = `${label}|${pair.home}|${pair.away}`;
     if (seen.has(key)) return;
     seen.add(key);
-    stats.push({ label, home: m[1], away: m[2], source: "glued-text" });
+    stats.push({ label, home: pair.home, away: pair.away, source: "glued-text" });
   });
 
   return stats;
@@ -657,7 +700,7 @@ function isLikelyWallClock(clock, extractedAt) {
     }
   }
 
-  return hours <= 23;
+  return false;
 }
 
 function matchCandidateRank(candidate, options = {}) {
@@ -882,9 +925,7 @@ function parseGluedMatch(text) {
 }
 
 function enrichMatchFromHeader(text, match = {}) {
-  const vs = text.match(
-    /([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})\s+v\s+([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})/
-  );
+  const vs = text.match(/([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})\s+v\s+([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,30})/);
   const competition = text.match(
     /(Copa do Mundo \d{4}|Champions League|Premier League|La Liga|Serie A|Bundesliga|Ligue 1)/i
   )?.[0];
@@ -904,8 +945,7 @@ function linesFromText(text) {
     .filter(Boolean);
 }
 
-const MARKET_LINE_RE =
-  /^(Mais de|Menos de|Jogador|Criar Aposta|Resultado Final|Ver$|Craques)/i;
+const MARKET_LINE_RE = /^(Mais de|Menos de|Jogador|Criar Aposta|Resultado Final|Ver$|Craques)/i;
 
 function extractStatsFromVisibleText(text, pageUrl) {
   const glued = parseGluedStats(text);
@@ -936,12 +976,7 @@ function extractStatsFromVisibleText(text, pageUrl) {
   return stats;
 }
 
-function collectMatchCandidatesFromText(
-  text,
-  source,
-  extractedAt,
-  maxLen = 3500
-) {
+function collectMatchCandidatesFromText(text, source, extractedAt, maxLen = 3500) {
   const candidates = [];
   if (!text || text.length > maxLen) return candidates;
 
@@ -985,12 +1020,7 @@ function extractMatchFromFrameChunks(frames, extractedAt, options = {}) {
     if (!text) continue;
 
     const source = frame.source || "frame-scoreboard";
-    const chunkCandidates = collectMatchCandidatesFromText(
-      text,
-      source,
-      extractedAt,
-      3500
-    );
+    const chunkCandidates = collectMatchCandidatesFromText(text, source, extractedAt, 3500);
 
     if (!chunkCandidates.length) {
       if (!looksLikeScoreboardText(text, homeTeam, awayTeam)) continue;
@@ -1040,46 +1070,387 @@ function isValidSelection(s) {
   return /[A-Za-zÀ-ú]/.test(s);
 }
 
+function isSkippedOddsLine(line) {
+  return !line || SKIP_ODDS_LINES.test(line);
+}
+
+function isStatLabel(text) {
+  const n = normalize(text);
+  if (!n) return false;
+  if (STAT_LABELS.some((label) => n === label || n.includes(label))) return true;
+  return STAT_LABEL_RE.test(n);
+}
+
+function isValidTotalsLine(value) {
+  if (!isLineValue(value)) return false;
+  const n = parseFloat(String(value).replace(",", "."));
+  return Number.isFinite(n) && n >= 0 && n <= 7.5;
+}
+
+function isTimelineLeakMarket(market) {
+  const s = normalize(market);
+  if (!s) return false;
+  if (/^\d+°\s*Gol$/i.test(s)) return false;
+  if (TIMELINE_LEAK_MARKET_RE.test(s)) return true;
+  if (/^[A-Za-zÀ-ú][A-Za-zÀ-ú' .-]*\s-\s(?:Chute|Assist)$/i.test(s)) return true;
+  if (/^Perdeu o P[eê]nalti$/i.test(s)) return true;
+  return false;
+}
+
+function isTimelineLeakSelection(selection) {
+  const s = normalize(selection);
+  if (!s) return false;
+  if (TIMELINE_LEAK_SELECTION_RE.test(s)) return true;
+  if (TIMELINE_LEAK_MARKET_RE.test(s)) return true;
+  if (/^Perdeu o P[eê]nalti$/i.test(s)) return true;
+  return false;
+}
+
+function isLikelyTeamNameSelection(selection) {
+  return /^(Argentina|Áustria|Austria|Uruguai|Brasil|França|France|Alemanha|Germany|Portugal|Inglaterra|England)$/i.test(
+    normalize(selection)
+  );
+}
+
+function isLikelyScoreboardSelection(selection) {
+  const s = normalize(selection);
+  if (/Resultado Após|Primeira Parte|Intervalo/i.test(s)) return true;
+  return /\d+\s*[-–]\s*\d+/.test(s);
+}
+
+function isLikelyStatCountAsOdd(odd, market, selection) {
+  if (!isPlayerPropMarket(market)) return false;
+  if (!Number.isFinite(odd) || !Number.isInteger(odd) || odd < 1 || odd > 20) return false;
+  const sel = normalize(selection);
+  if (/\s-\s\d{1,2}\+$/.test(sel)) return false;
+  return /^[A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{2,}$/.test(sel);
+}
+
+function isLikelyMinuteAsOdd(odd, market, selection) {
+  if (!Number.isFinite(odd) || !Number.isInteger(odd) || odd < 1 || odd > 120) return false;
+  if (isTimelineLeakMarket(market) || isTimelineLeakSelection(selection)) return true;
+  if (isLikelyTeamNameSelection(selection)) return true;
+  if (isLikelyScoreboardSelection(selection)) return true;
+  const sel = normalize(selection);
+  if (PLAYER_SHORT_ODDS_NAME_RE.test(sel) && isTimelineLeakMarket(market)) return true;
+  if (PLAYER_SHORT_ODDS_NAME_RE.test(sel) && /Escanteio/i.test(market || "")) return true;
+  return false;
+}
+
+function isJunkOddsMarket(market) {
+  if (!market || market === "—" || market === "Mercado") return true;
+  if (market.length > 55) return true;
+  if (JUNK_ODDS_MARKETS.test(market)) return true;
+  if (LEGAL_FOOTER_MARKET_RE.test(market)) return true;
+  if (isStatLabel(market)) return true;
+  if (isTimelineLeakMarket(market)) return true;
+  return false;
+}
+
+function isTeamGoalsMarket(market) {
+  return / - Gols$/i.test(market || "");
+}
+
+function isPlayerPropMarket(market) {
+  return /^Jogador\s*-/i.test(market || "");
+}
+
+function isJunkTeamGoalsSelection(market, selection) {
+  if (!isTeamGoalsMarket(market)) return false;
+  return !/^(Mais de|Menos de)\s+\d/.test(normalize(selection));
+}
+
+function isJunkPlayerPropSelection(market, selection) {
+  if (!isPlayerPropMarket(market)) return false;
+  return /^(Mais de|Menos de)\s+/i.test(normalize(selection));
+}
+
+function isPlayerGridColumnHeader(line) {
+  const s = normalize(line);
+  if (!s) return false;
+  if (/^\d{1,2}\+$/.test(s)) return true;
+  if (s === "1+") return true;
+  return false;
+}
+
+function normalizePlayerGridColumn(line) {
+  const s = normalize(line);
+  if (/^\d{1,2}\+$/.test(s)) return s;
+  if (s === "1") return "1+";
+  return s;
+}
+
+function collectPlayerGridColumns(lines, start) {
+  const columns = [];
+  let i = start;
+
+  if (lines[i] === "1" && isPlayerGridColumnHeader(lines[i + 1])) {
+    columns.push("1+");
+    i++;
+  }
+
+  while (i < lines.length && isPlayerGridColumnHeader(lines[i])) {
+    columns.push(normalizePlayerGridColumn(lines[i]));
+    i++;
+  }
+
+  return { columns, nextIndex: i };
+}
+
+function isLikelyPlayerNameLine(line) {
+  return (
+    isValidSelection(line) &&
+    /^[A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{2,}$/.test(line) &&
+    !isPlayerGridColumnHeader(line) &&
+    !/^Jogador\b/i.test(line)
+  );
+}
+
+function consumePlayerPropRow(lines, start, columns, market, pushOdd) {
+  if (!columns.length) return null;
+
+  let i = start;
+  if (/^\d{1,2}$/.test(lines[i]) && isLikelyPlayerNameLine(lines[i + 1])) i++;
+  const name = lines[i];
+  if (!isLikelyPlayerNameLine(name)) return null;
+  i++;
+
+  if (/^\d{1,2}$/.test(lines[i]) && !isValidOdd(parseOdd(lines[i]))) i++;
+
+  const values = [];
+  while (i < lines.length && values.length < columns.length) {
+    const odd = parseOdd(lines[i]);
+    if (!isValidOdd(odd)) break;
+    values.push(odd);
+    i++;
+  }
+
+  if (!values.length) return null;
+
+  const count = Math.min(columns.length, values.length);
+  for (let c = 0; c < count; c++) {
+    pushOdd({
+      market,
+      selection: `${name} - ${columns[c]}`,
+      odds: values[c],
+    });
+  }
+
+  return i - 1;
+}
+
+function isJunkOddsSelection(selection) {
+  const s = normalize(selection);
+  if (!s) return true;
+  if (isTimelineLeakSelection(s)) return true;
+  if (isLikelyScoreboardSelection(s)) return true;
+  if (isStatLabel(s)) return true;
+  if (/^Perdeu o\b/i.test(s)) return true;
+  if (/^Jogadores Titulares$/i.test(s)) return true;
+  if (/^Exibir Totais da Partida$/i.test(s)) return true;
+  if (/^\d+°\s/.test(s)) return true;
+  if (/^1° Impedimento$/i.test(s)) return true;
+  if (/^\d+\s+[A-Za-zÀ-ú]{3,}.*\d/.test(s)) return true;
+  if (/^(Mais de|Menos de)\s+/.test(s)) {
+    const linePart = s.replace(/^(Mais de|Menos de)\s+/, "");
+    return !isValidTotalsLine(linePart);
+  }
+  return false;
+}
+
+function isLikelyBettingMarket(market) {
+  if (isJunkOddsMarket(market)) return false;
+  if (isTimelineLeakMarket(market)) return false;
+  if (/^(Empate|Sim|Não|Nenhum)$/i.test(market)) return false;
+  if (market.includes(" - ")) return true;
+  if (/\s/.test(market)) return BETTING_MARKET_HINTS.test(market);
+  return /^(Resultado|Partida|Chance|Total|Marcador|Handicap|Intervalo)/i.test(market);
+}
+
+function isLikelyShirtNumberPair(selection, oddRaw, lines, oddIndex) {
+  if (!/^[A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,}$/.test(selection)) return false;
+  if (!/^\d{1,2}$/.test(String(oddRaw).trim())) return false;
+  const n = parseInt(oddRaw, 10);
+  if (n < 1 || n > 99) return false;
+  const next = lines[oddIndex + 1];
+  return Boolean(
+    next && /^[A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,}$/.test(next) && !isValidOdd(parseOdd(next))
+  );
+}
+
+function isLikelyMarketHeader(line, lines, index) {
+  if (isSkippedOddsLine(line)) return false;
+  if (isTimelineLeakMarket(line)) return false;
+  if (isLineValue(line)) return false;
+  if (isValidOdd(parseOdd(line))) return false;
+  if (line.length < 4) return false;
+  if (!/[A-Za-zÀ-ú]/.test(line)) return false;
+
+  let j = index + 1;
+  while (j < lines.length && isSkippedOddsLine(lines[j])) j++;
+  if (j >= lines.length) return false;
+
+  const next = lines[j];
+  if (isLineValue(next)) return isLikelyBettingMarket(line) || line.includes(" - ");
+  if (isValidSelection(next) && !isValidOdd(parseOdd(next))) {
+    return isLikelyBettingMarket(line);
+  }
+  return false;
+}
+
 function parseOddsFromVisibleText(text) {
   const odds = [];
   const seen = new Set();
+  const lines = linesFromText(text);
+  let market = "—";
+  let pendingLines = [];
+  let playerNames = [];
+  let playerGridColumns = [];
+  let inPlayerGrid = false;
 
+  function pushOdd(entry) {
+    const { market: mkt, selection, odds: odd } = entry;
+    if (!isLikelyBettingMarket(mkt)) return;
+    if (!isValidOdd(odd)) return;
+    if (JUNK_ODDS_SELECTIONS.test(selection)) return;
+    if (isJunkTeamGoalsSelection(mkt, selection)) return;
+    if (isJunkPlayerPropSelection(mkt, selection)) return;
+    if (isJunkOddsSelection(selection)) return;
+    if (isLikelyMinuteAsOdd(odd, mkt, selection)) return;
+    if (isLikelyStatCountAsOdd(odd, mkt, selection)) return;
+    const validSelection = isValidSelection(selection) || /^.+\s-\s\d{1,2}\+$/.test(selection);
+    if (!validSelection) return;
+    const key = `${mkt}|${selection}|${odd}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    odds.push({ market: mkt, selection, odds: odd, source: "visible-text" });
+  }
+
+  function resetMarketContext() {
+    pendingLines = [];
+    playerNames = [];
+    playerGridColumns = [];
+    inPlayerGrid = false;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (
+      (/^Jogador\s*-/i.test(line) && line.includes(" - ")) ||
+      isLikelyMarketHeader(line, lines, i)
+    ) {
+      market = line;
+      resetMarketContext();
+      continue;
+    }
+
+    if (/^Marcadores/i.test(market)) {
+      if (/^A Qualquer Momento$/i.test(line)) {
+        let j = i + 1;
+        let p = 0;
+        while (j < lines.length && p < playerNames.length) {
+          const odd = parseOdd(lines[j]);
+          if (!isValidOdd(odd)) break;
+          pushOdd({ market, selection: playerNames[p], odds: odd });
+          p++;
+          j++;
+        }
+        i = j - 1;
+        playerNames = [];
+        continue;
+      }
+      if (
+        isValidSelection(line) &&
+        /^[A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,}$/.test(line) &&
+        !/^(Mercado|SUBSTITUI)/i.test(line)
+      ) {
+        playerNames.push(line);
+        continue;
+      }
+    }
+
+    if (/^Jogador\/Contagem$/i.test(line) && isPlayerPropMarket(market)) {
+      const collected = collectPlayerGridColumns(lines, i + 1);
+      playerGridColumns = collected.columns;
+      inPlayerGrid = playerGridColumns.length > 0;
+      i = collected.nextIndex - 1;
+      continue;
+    }
+
+    if (inPlayerGrid && playerGridColumns.length) {
+      const consumed = consumePlayerPropRow(lines, i, playerGridColumns, market, pushOdd);
+      if (consumed != null) {
+        i = consumed;
+        continue;
+      }
+    }
+
+    if (isSkippedOddsLine(line)) continue;
+
+    if (isLineValue(line) && market !== "—") {
+      pendingLines.push(line);
+      continue;
+    }
+
+    if (/^(Mais de|Menos de)$/i.test(line) && !isPlayerPropMarket(market)) {
+      const direction = line;
+      if (pendingLines.length > 1) {
+        let j = i + 1;
+        let col = 0;
+        while (j < lines.length && col < pendingLines.length) {
+          const odd = parseOdd(lines[j]);
+          if (!isValidOdd(odd)) break;
+          pushOdd({
+            market,
+            selection: `${direction} ${pendingLines[col]}`,
+            odds: odd,
+          });
+          col++;
+          j++;
+        }
+        i = j - 1;
+      } else {
+        const odd = parseOdd(lines[i + 1]);
+        const lineVal = pendingLines[0];
+        const selection = lineVal ? `${direction} ${lineVal}` : direction;
+        pushOdd({ market, selection, odds: odd });
+        i++;
+      }
+      if (/^Menos de$/i.test(direction)) {
+        pendingLines = [];
+      }
+      continue;
+    }
+
+    const odd = parseOdd(lines[i + 1]);
+    if (isValidSelection(line) && isValidOdd(odd)) {
+      if (isLikelyShirtNumberPair(line, lines[i + 1], lines, i + 1)) {
+        i++;
+        continue;
+      }
+      pushOdd({ market, selection: line, odds: odd });
+      pendingLines = [];
+      i++;
+    }
+  }
+
+  const selectionOddSeen = new Set([...seen].map((key) => key.slice(key.indexOf("|") + 1)));
   const glued = /([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{2,28})\s+(\d+[.,]\d{1,3})\b/g;
   let m;
   while ((m = glued.exec(text)) !== null) {
     const selection = normalize(m[1]);
     const odd = parseOdd(m[2]);
     if (!isValidSelection(selection) || !isValidOdd(odd)) continue;
-    const key = `${selection}|${odd}`;
+    if (JUNK_ODDS_SELECTIONS.test(selection)) continue;
+    if (isJunkOddsSelection(selection)) continue;
+    const selectionKey = `${selection}|${odd}`;
+    if (selectionOddSeen.has(selectionKey)) continue;
+    const key = `—|${selectionKey}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    selectionOddSeen.add(selectionKey);
     odds.push({ market: "—", selection, odds: odd, source: "visible-text" });
-  }
-
-  const lines = linesFromText(text);
-  let market = "—";
-
-  for (let i = 0; i < lines.length - 1; i++) {
-    const selection = lines[i];
-    const odd = parseOdd(lines[i + 1]);
-
-    if (isValidSelection(selection) && isValidOdd(odd)) {
-      const key = `${market}|${selection}|${odd}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        odds.push({ market, selection, odds: odd, source: "visible-text" });
-      }
-      i++;
-      continue;
-    }
-
-    if (
-      !isNum(selection) &&
-      !isValidOdd(parseOdd(selection)) &&
-      isValidSelection(lines[i + 1])
-    ) {
-      market = selection;
-    }
   }
 
   return odds;
@@ -1089,6 +1460,14 @@ function cleanOdds(odds) {
   const filtered = odds.filter(
     (o) =>
       !JUNK_ODDS_SELECTIONS.test(o.selection) &&
+      !isJunkOddsMarket(o.market) &&
+      !isJunkTeamGoalsSelection(o.market, o.selection) &&
+      !isJunkPlayerPropSelection(o.market, o.selection) &&
+      !isJunkOddsSelection(o.selection) &&
+      !isTimelineLeakMarket(o.market) &&
+      !isTimelineLeakSelection(o.selection) &&
+      !isLikelyMinuteAsOdd(o.odds, o.market, o.selection) &&
+      !isLikelyStatCountAsOdd(o.odds, o.market, o.selection) &&
       o.market !== "Mercado" &&
       o.market !== "—"
   );
@@ -1112,6 +1491,7 @@ function mergeOdds(...lists) {
 
   if (!domNet.length) return cleanOdds(visible);
 
+  const domKeys = new Set(domNet.map((o) => `${o.market}|${o.selection}|${o.odds}`));
   const domMarkets = new Set(domNet.map((o) => o.market));
   const domSelectionsByMarket = new Map();
 
@@ -1121,12 +1501,17 @@ function mergeOdds(...lists) {
     domSelectionsByMarket.set(o.market, selections);
   });
 
-  const gapFill = visible.filter((o) => {
-    if (!domMarkets.has(o.market)) return false;
-    return !domSelectionsByMarket.get(o.market)?.has(o.selection);
+  const visibleSupplement = visible.filter((o) => {
+    if (!isLikelyBettingMarket(o.market)) return false;
+    const key = `${o.market}|${o.selection}|${o.odds}`;
+    if (domKeys.has(key)) return false;
+    if (domMarkets.has(o.market)) {
+      return !domSelectionsByMarket.get(o.market)?.has(o.selection);
+    }
+    return true;
   });
 
-  return cleanOdds([...domNet, ...gapFill]);
+  return cleanOdds([...domNet, ...visibleSupplement]);
 }
 
 function mergeStats(...lists) {
@@ -1213,7 +1598,10 @@ function walkBet365Json(node, path, out) {
     }
   }
 
-  if (kl.some((k) => /odds|od|price|coef/.test(k)) && kl.some((k) => /name|na|selection|team/.test(k))) {
+  if (
+    kl.some((k) => /odds|od|price|coef/.test(k)) &&
+    kl.some((k) => /name|na|selection|team/.test(k))
+  ) {
     const selection = node.name || node.NA || node.selection || node.team;
     const odds = node.odds ?? node.OD ?? node.price ?? node.coef;
     const market = node.market || node.marketName || node.MG || "Mercado";
@@ -1356,12 +1744,7 @@ function assessMatchConfidence(match, meta = {}) {
 }
 
 function gatherMatchCandidates(options = {}) {
-  const {
-    frameChunks = [],
-    visibleText = "",
-    extractedAt,
-    extraCandidates = [],
-  } = options;
+  const { frameChunks = [], visibleText = "", extractedAt, extraCandidates = [] } = options;
   const candidates = [...extraCandidates];
 
   for (const frame of frameChunks) {
@@ -1444,16 +1827,34 @@ function buildSourceBreakdown(stats, odds) {
 
 function buildNetworkDebugSamples(networkLog, limit = 15) {
   return (networkLog || []).slice(0, limit).map((entry) => {
+    const url = String(entry.url || "");
     const hints =
       entry.hints ||
       (typeof entry.data === "string" ? extractNetworkHints(entry.data, entry.url) : null);
+    const isIpeBlob = /ipe\/5378|ipe-BR/i.test(url);
+    const isZapWs = /sportspublisher\/zap|zap-ws/i.test(url);
+    const hintPlayers = Array.isArray(hints?.lineupPlayers) ? hints.lineupPlayers : [];
+    const dataText = typeof entry.data === "string" ? entry.data : entry.data?._rawText || "";
+    const naSamples = [];
+    if (isIpeBlob && dataText) {
+      for (const m of dataText.matchAll(/\bNA=([^|;\x00-\x1f\x14]{2,60})/g)) {
+        if (naSamples.length >= 12) break;
+        naSamples.push(m[1].trim());
+      }
+    }
 
     return {
-      url: String(entry.url || "").slice(0, 220),
+      url: url.slice(0, 220),
       at: entry.at || null,
       kind: entry.kind || "fetch",
       rawLen: entry.rawLen ?? null,
+      isIpeBlob,
+      isZapWs,
+      zapBufferLen: hints?.zapBufferLen ?? null,
       fieldKeys: hints?.fieldKeys || [],
+      lineupPlayersCount: hintPlayers.length,
+      lineupPlayers: hintPlayers.slice(0, 16).map((p) => p?.name || p),
+      naSamples,
       wireMatches: hints?.matches || [],
       wireClocks: hints?.clocks || [],
       wireMatch: hints?.match || null,
@@ -1479,6 +1880,7 @@ function buildExtractionDebug({
   meta = {},
   pipeline = [],
   networkLog = [],
+  sidePanelBlobDebug = [],
   domProbe = [],
   stats = [],
   odds = [],
@@ -1526,6 +1928,7 @@ function buildExtractionDebug({
     clockDebug,
     sourceBreakdown,
     networkSamples,
+    sidePanelBlobDebug: (sidePanelBlobDebug || []).slice(0, 6),
     networkBreakdown: (networkLog || []).reduce((acc, entry) => {
       const kind = entry.kind || "fetch";
       acc[kind] = (acc[kind] || 0) + 1;
@@ -1582,9 +1985,7 @@ function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt, p
 
   if (inference.applied) {
     const warnings = [...(result.scoreWarnings || [])];
-    warnings.push(
-      `Placar inferido por mercados (mín. ${inference.analysis.minTotalGoals} gols).`
-    );
+    warnings.push(`Placar inferido por mercados (mín. ${inference.analysis.minTotalGoals} gols).`);
 
     let confidence = result.scoreConfidence;
     if (!result.clock && confidence === "high") confidence = "medium";
@@ -1599,23 +2000,37 @@ function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt, p
   return { match: result, inference, analysis: inference.analysis };
 }
 
-{ analyzeMarketScore, applyMarketScoreInference };
+function slugifyFilenamePart(text) {
+  if (!text) return null;
+  return String(text)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s-]+/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .toLowerCase();
+}
 
 function buildBet365Slug(data) {
   const m = data?.match || {};
-  const slug = [m.homeTeam, m.awayTeam]
+  const parts = [m.homeTeam, m.awayTeam]
     .filter(Boolean)
-    .join("-")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w-]+/g, "")
-    .toLowerCase();
-  return slug || "bet365";
+    .map((team) => slugifyFilenamePart(team))
+    .filter(Boolean);
+  return parts.join("-") || "jogo";
 }
 
 function buildBet365Filename(data, ext, isoDate = new Date().toISOString()) {
-  const ts = isoDate.replace(/[:.]/g, "-");
-  return `bet365-${buildBet365Slug(data)}-${ts}.${ext}`;
+  const m = data?.match || {};
+  const competition = slugifyFilenamePart(m.competition) || "campeonato";
+  const game = buildBet365Slug(data);
+  const score = slugifyFilenamePart(m.score) || "sem-placar";
+  const ts = (m.extractedAt || isoDate)
+    .replace(/\.\d{3}Z?$/i, "")
+    .replace(/Z$/i, "")
+    .replace("T", "_")
+    .replace(/:/g, "-");
+  return `${competition}-${game}-${score}-${ts}.${ext}`;
 }
 
 function formatBet365Logs(data) {
@@ -1664,6 +2079,60 @@ function formatBet365Logs(data) {
     lines.push("", "--- INFERÊNCIA MERCADOS ---", ...inference.reasons);
   }
 
+  const sidePanel = data?.sidePanel || {};
+  const timeline = sidePanel.timeline || [];
+  const lineup = sidePanel.lineup;
+  const finals = sidePanel.playerFinalizations || [];
+  const areas = sidePanel.actionAreas;
+
+  lines.push(
+    "",
+    "--- PAINEL LATERAL ---",
+    `Cronologia: ${timeline.length} evento(s)`,
+    `Escalação: ${
+      lineup
+        ? `casa ${lineup.home?.starters?.length ?? 0} tit. / fora ${lineup.away?.starters?.length ?? 0} tit.`
+        : "não capturada"
+    }`,
+    `Finalizações: ${finals.length} jogador(es)`,
+    areas
+      ? `Áreas de Ação: E ${areas.left} | C ${areas.center} | D ${areas.right}`
+      : "Áreas de Ação: —"
+  );
+
+  if (timeline.length) {
+    lines.push(
+      "",
+      "--- CRONOLOGIA ---",
+      ...timeline.map(
+        (e) => `${e.minute ?? "?"}' [${e.type}] ${e.description} (${e.source || "?"})`
+      )
+    );
+  }
+
+  if (finals.length) {
+    lines.push(
+      "",
+      "--- FINALIZAÇÕES ---",
+      ...finals.map((r) => `${r.player}: ${r.shots} chutes, ${r.onTarget} no gol`)
+    );
+  }
+
+  if (lineup) {
+    lines.push(
+      "",
+      "--- ESCALAÇÃO (casa) ---",
+      ...(lineup.home?.starters || []).map((p) => `  ${p}`),
+      "Suplentes:",
+      ...(lineup.home?.subs || []).map((p) => `  ${p}`),
+      "",
+      "--- ESCALAÇÃO (fora) ---",
+      ...(lineup.away?.starters || []).map((p) => `  ${p}`),
+      "Suplentes:",
+      ...(lineup.away?.subs || []).map((p) => `  ${p}`)
+    );
+  }
+
   lines.push(
     "",
     "--- STATS ---",
@@ -1697,6 +2166,9 @@ function formatBet365DebugLogs(data) {
     `visibleTextLength: ${meta.visibleTextLength ?? debug.visibleTextLength ?? "—"}`,
     `statsCount: ${meta.statsCount ?? data.stats?.length ?? 0}`,
     `oddsCount: ${meta.oddsCount ?? data.odds?.length ?? 0}`,
+    `sidePanelTimeline: ${meta.sidePanelTimelineCount ?? data.sidePanel?.timeline?.length ?? 0}`,
+    `sidePanelLineup: ${(meta.sidePanelLineupCaptured ?? Boolean(data.sidePanel?.lineup)) ? "yes" : "no"}`,
+    `sidePanelFinalizations: ${meta.sidePanelFinalizationsCount ?? data.sidePanel?.playerFinalizations?.length ?? 0}`,
     "",
     "--- PLACAR ---",
     `score: ${m.score ?? "—"}`,
@@ -1802,8 +2274,15 @@ function formatBet365DebugLogs(data) {
     debug.networkSamples.forEach((n, i) => {
       lines.push(`${i + 1}. [${n.kind || "?"}] ${n.url}`);
       if (n.rawLen != null) lines.push(`    rawLen: ${n.rawLen}`);
+      if (n.isIpeBlob) lines.push(`    ipeBlob: yes`);
       if (n.fieldKeys?.length) lines.push(`    fields: ${n.fieldKeys.join(", ")}`);
-      if (n.wireMatch) lines.push(`    wireMatch: ${n.wireMatch.score} @ ${n.wireMatch.clock ?? "—"}`);
+      if (n.lineupPlayersCount != null) {
+        lines.push(`    hintLineupPlayers: ${n.lineupPlayersCount}`);
+        if (n.lineupPlayers?.length) lines.push(`    hintPlayers: ${n.lineupPlayers.join(", ")}`);
+      }
+      if (n.naSamples?.length) lines.push(`    naSamples: ${n.naSamples.join(", ")}`);
+      if (n.wireMatch)
+        lines.push(`    wireMatch: ${n.wireMatch.score} @ ${n.wireMatch.clock ?? "—"}`);
       if (n.wireMatches?.length) lines.push(`    wireScores: ${JSON.stringify(n.wireMatches)}`);
       if (n.wireClocks?.length) lines.push(`    wireClocks: ${n.wireClocks.join(", ")}`);
       if (n.keys?.length) lines.push(`    keys: ${n.keys.join(", ")}`);
@@ -1840,6 +2319,80 @@ function formatBet365DebugLogs(data) {
       lines.push(
         `${p.step}: ${p.detail ?? ""}${p.ms != null ? ` (${p.ms}ms)` : ""}${p.count != null ? ` count=${p.count}` : ""}`
       );
+    });
+  }
+
+  const sidePanel = data?.sidePanel || {};
+  if (sidePanel.tabCapture && Object.keys(sidePanel.tabCapture).length) {
+    lines.push("", "--- SIDE PANEL TABS ---");
+    Object.entries(sidePanel.tabCapture).forEach(([k, v]) => {
+      lines.push(`${k}: len=${v.length} captured=${v.captured}`);
+    });
+  }
+  if (sidePanel.timeline?.length) {
+    lines.push("", "--- SIDE PANEL TIMELINE ---");
+    sidePanel.timeline.forEach((e, i) => {
+      lines.push(`${i + 1}. ${e.minute ?? "?"}' [${e.type}] ${e.description} (${e.source})`);
+    });
+  }
+  if (sidePanel.network?.playerNames?.length) {
+    lines.push("", "--- SIDE PANEL NETWORK HINTS ---", sidePanel.network.playerNames.join(", "));
+  }
+
+  if (debug.sidePanelBlobDebug?.length) {
+    lines.push("", "--- LINEUP WIRE DEBUG ---");
+    debug.sidePanelBlobDebug.forEach((b, i) => {
+      const isZap = b.source === "zap-ws";
+      const label = isZap ? "zap-ws" : "ipe/5378";
+      if (isZap) {
+        lines.push(
+          `${i + 1}. [${label}] messages=${b.messageCount ?? 0} mergedLen=${b.mergedLen ?? "—"} largest=${b.largestMessage ?? "—"} hintLineup=${b.hintLineupCount ?? 0} wirePlayers=${b.wirePlayerCount ?? 0} lineupParsed=${b.lineupParsed ? "yes" : "no"}`
+        );
+      } else {
+        lines.push(
+          `${i + 1}. [${label}] [${b.kind || "?"}] rawLen=${b.rawLen ?? "—"} storedLen=${b.storedLen ?? "—"} hintLineup=${b.hintLineupCount ?? 0} wirePlayers=${b.wirePlayerCount ?? 0} naPlayerLike=${b.naPlayerLikeCount ?? 0} lineupParsed=${b.lineupParsed ? "yes" : "no"}`
+        );
+      }
+      if (b.url) lines.push(`    url: ${b.url}`);
+      if (b.fieldKeys?.length) lines.push(`    fields: ${b.fieldKeys.join(", ")}`);
+      if (b.hintLineupPlayers?.length) {
+        lines.push(`    hintLineupPlayers: ${b.hintLineupPlayers.map((p) => p.name).join(", ")}`);
+      }
+      if (b.wirePlayers?.length) {
+        lines.push(
+          `    wirePlayers: ${b.wirePlayers.map((p) => `${p.name}${p.team != null ? `(T${p.team})` : ""}`).join(", ")}`
+        );
+      }
+      if (b.naSamples?.length) {
+        const sample = b.naSamples
+          .filter((s) => s.playerLike)
+          .map((s) => s.name)
+          .slice(0, 16);
+        if (sample.length) lines.push(`    naPlayerLike: ${sample.join(", ")}`);
+        const junk = b.naSamples
+          .filter((s) => !s.playerLike)
+          .map((s) => s.name)
+          .slice(0, 8);
+        if (junk.length) lines.push(`    naOther: ${junk.join(", ")}`);
+      }
+      if (b.messageSamples?.length) {
+        b.messageSamples.slice(0, 3).forEach((m, j) => {
+          lines.push(`    msg[${j}]: rawLen=${m.rawLen ?? "—"} ${m.preview ?? ""}`);
+        });
+      }
+      if (b.wireRecordSamples?.length) {
+        lines.push(`    wireRecord[0]: ${b.wireRecordSamples[0]}`);
+      }
+      if (b.lineupStarters) {
+        lines.push(
+          `    lineupStarters: home=${b.lineupStarters.home} away=${b.lineupStarters.away} (${b.lineupStarters.source})`
+        );
+      }
+      if (b.finalsCount) {
+        lines.push(
+          `    finals: ${b.finalsSample?.map((f) => `${f.player} ${f.shots}/${f.onTarget}`).join(", ")}`
+        );
+      }
     });
   }
 
@@ -1919,7 +2472,37 @@ function formatBet365TraceLogs(data) {
   if (debug.networkSamples?.length) {
     lines.push("", "--- NETWORK ---");
     debug.networkSamples.forEach((n, i) => {
-      lines.push(`${i + 1}. [${n.kind || "?"}] ${n.at ?? "?"} | ${n.url}`);
+      const extra = n.isZapWs
+        ? ` zap hintLineup=${n.lineupPlayersCount ?? 0} buf=${n.zapBufferLen ?? "—"}`
+        : n.isIpeBlob
+          ? ` ipe hintLineup=${n.lineupPlayersCount ?? 0}`
+          : "";
+      lines.push(`${i + 1}. [${n.kind || "?"}] ${n.at ?? "?"} | ${n.url}${extra}`);
+    });
+  }
+
+  if (debug.sidePanelBlobDebug?.length) {
+    lines.push("", "--- LINEUP WIRE ---");
+    debug.sidePanelBlobDebug.forEach((b, i) => {
+      const isZap = b.source === "zap-ws";
+      const src = isZap ? "zap-ws" : "ipe/5378";
+      if (isZap) {
+        lines.push(
+          `${i + 1}. [${src}] msgs=${b.messageCount ?? 0} merged=${b.mergedLen ?? "—"} hint=${b.hintLineupCount ?? 0} wire=${b.wirePlayerCount ?? 0} parsed=${b.lineupParsed ? "yes" : "no"}`
+        );
+      } else {
+        lines.push(
+          `${i + 1}. [${src}] hint=${b.hintLineupCount ?? 0} wire=${b.wirePlayerCount ?? 0} naLike=${b.naPlayerLikeCount ?? 0} parsed=${b.lineupParsed ? "yes" : "no"} rawLen=${b.rawLen ?? "—"}`
+        );
+      }
+      if (b.hintLineupPlayers?.length) {
+        lines.push(
+          `    hints: ${b.hintLineupPlayers
+            .map((p) => p.name)
+            .slice(0, 8)
+            .join(", ")}`
+        );
+      }
     });
   }
 
@@ -1945,196 +2528,201 @@ function formatBet365TraceLogs(data) {
   return lines.join("\n");
 }
 
-    const networkLog = [];
-  const MAX_NET = 120;
+  const networkLog = [];
+const MAX_NET = 120;
 
-  function receiveNetworkEntry(entry) {
-    if (!entry) return;
-    const keepRaw =
-      typeof entry.data === "string" &&
-      (/\/Api\/1\/Blob\b/i.test(entry.url || "") || (entry.data.length || 0) > 4000);
-    const normalized = keepRaw
-      ? entry.data
-      : typeof entry.data === "string"
-        ? parseNetworkPayload(entry.data) ?? { _rawText: entry.data.slice(0, 4000) }
-        : entry.data;
+function receiveNetworkEntry(entry) {
+  if (!entry) return;
+  const keepRaw =
+    typeof entry.data === "string" &&
+    (/\/Api\/1\/Blob\b/i.test(entry.url || "") ||
+      /sportspublisher\/zap/i.test(entry.url || "") ||
+      (entry.data.length || 0) > 4000);
+  const normalized = keepRaw
+    ? entry.data
+    : typeof entry.data === "string"
+      ? (parseNetworkPayload(entry.data) ?? { _rawText: entry.data.slice(0, 4000) })
+      : entry.data;
 
-    networkLog.unshift({
-      url: entry.url,
-      at: entry.at || new Date().toISOString(),
-      kind: entry.kind || "fetch",
-      data: normalized ?? entry.data,
-      rawLen: entry.rawLen ?? (typeof entry.data === "string" ? entry.data.length : null),
-      hints: entry.hints || null,
-    });
-    if (networkLog.length > MAX_NET) networkLog.length = MAX_NET;
-  }
+  networkLog.unshift({
+    url: entry.url,
+    at: entry.at || new Date().toISOString(),
+    kind: entry.kind || "fetch",
+    data: normalized ?? entry.data,
+    rawLen: entry.rawLen ?? (typeof entry.data === "string" ? entry.data.length : null),
+    hints: entry.hints || null,
+  });
+  if (networkLog.length > MAX_NET) networkLog.length = MAX_NET;
+}
 
-  function pushNetwork(url, data, kind = "fetch") {
-    const u = resolveNetworkUrl(url);
-    const normalized =
-      typeof data === "string" ? parseNetworkPayload(data) ?? { _rawText: data.slice(0, 4000) } : data;
+function pushNetwork(url, data, kind = "fetch") {
+  const u = resolveNetworkUrl(url);
+  const normalized =
+    typeof data === "string"
+      ? (parseNetworkPayload(data) ?? { _rawText: data.slice(0, 4000) })
+      : data;
 
-    if (!isBet365NetworkUrl(u) && !looksLikeBet365NetworkPayload(normalized ?? data)) return;
+  if (!isBet365NetworkUrl(u) && !looksLikeBet365NetworkPayload(normalized ?? data)) return;
 
-    receiveNetworkEntry({
-      url: u || `unknown:${kind}`,
-      kind,
-      data: normalized ?? data,
-      rawLen: typeof data === "string" ? data.length : null,
-    });
-  }
+  receiveNetworkEntry({
+    url: u || `unknown:${kind}`,
+    kind,
+    data: normalized ?? data,
+    rawLen: typeof data === "string" ? data.length : null,
+  });
+}
 
-  function decodeSocketData(data) {
-    if (typeof data === "string") return data;
-    if (data instanceof ArrayBuffer) {
-      try {
-        return new TextDecoder("utf-8").decode(data);
-      } catch (_) {
-        return null;
-      }
-    }
-    if (ArrayBuffer.isView(data)) {
-      try {
-        return new TextDecoder("utf-8").decode(data.buffer);
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  function installNetworkSniffer() {
-    if (window.__bet365SnifferInstalled) return;
-    window.__bet365SnifferInstalled = true;
-
-    const origFetch = window.fetch;
-    if (origFetch) {
-      window.fetch = async function (...args) {
-        const res = await origFetch.apply(this, args);
-        try {
-          const clone = res.clone();
-          const ct = (clone.headers.get("content-type") || "").toLowerCase();
-          const url = resolveNetworkUrl(args[0]);
-          if (ct.includes("json")) {
-            const data = await clone.json().catch(() => null);
-            if (data) pushNetwork(url, data, "fetch");
-          } else if (ct.includes("text") || ct.includes("plain") || !ct) {
-            const text = await clone.text().catch(() => null);
-            if (text) pushNetwork(url, text, "fetch");
-          }
-        } catch (_) {}
-        return res;
-      };
-    }
-
-    const XO = XMLHttpRequest.prototype.open;
-    const XS = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-      this.__bet365Url = resolveNetworkUrl(url);
-      return XO.call(this, method, url, ...rest);
-    };
-    XMLHttpRequest.prototype.send = function (...args) {
-      this.addEventListener("load", function () {
-        try {
-          const url = this.__bet365Url || "";
-          const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
-          const body = this.responseText;
-          if (!body) return;
-          if (ct.includes("json")) {
-            pushNetwork(url, JSON.parse(body), "xhr");
-          } else {
-            pushNetwork(url, body, "xhr");
-          }
-        } catch (_) {}
-      });
-      return XS.apply(this, args);
-    };
-
-    const OrigWS = window.WebSocket;
-    if (OrigWS) {
-      const Bet365WS = function (url, protocols) {
-        const ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
-        const wsUrl = resolveNetworkUrl(url);
-
-        if (isBet365NetworkUrl(wsUrl)) {
-          ws.addEventListener("message", (ev) => {
-            const text = decodeSocketData(ev.data);
-            if (text) pushNetwork(`ws:${wsUrl}`, text, "ws");
-          });
-        }
-
-        return ws;
-      };
-      Bet365WS.prototype = OrigWS.prototype;
-      Object.defineProperty(Bet365WS, "CONNECTING", { value: OrigWS.CONNECTING });
-      Object.defineProperty(Bet365WS, "OPEN", { value: OrigWS.OPEN });
-      Object.defineProperty(Bet365WS, "CLOSING", { value: OrigWS.CLOSING });
-      Object.defineProperty(Bet365WS, "CLOSED", { value: OrigWS.CLOSED });
-      window.WebSocket = Bet365WS;
-    }
-  }
-
-  function initNetworkBridge() {
-    if (window.__bet365NetBridge) return;
-    window.__bet365NetBridge = true;
-
-    window.addEventListener("message", (ev) => {
-      if (ev.source !== window || ev.data?.channel !== "bet365-extractor-net") return;
-      receiveNetworkEntry(ev.data.entry);
-    });
-  }
-
-  function injectPageNetworkSniffer(pageSnifferSource) {
-    initNetworkBridge();
-    const script = document.createElement("script");
-    script.textContent = pageSnifferSource;
-    (document.documentElement || document.head || document.body).appendChild(script);
-    script.remove();
-  }
-
-  installNetworkSniffer();
-
-    function walkWindowFrames(win, depth, out, seen) {
-    if (!win || depth > 14 || seen.has(win)) return;
-    seen.add(win);
-
+function decodeSocketData(data) {
+  if (typeof data === "string") return data;
+  if (data instanceof ArrayBuffer) {
     try {
-      const doc = win.document;
-      if (!doc) return;
+      return new TextDecoder("utf-8").decode(data);
+    } catch (_) {
+      return null;
+    }
+  }
+  if (ArrayBuffer.isView(data)) {
+    try {
+      return new TextDecoder("utf-8").decode(data.buffer);
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
 
-      const text = doc.documentElement?.innerText || doc.body?.innerText || "";
-      const href = win.location?.href || "";
+function installNetworkSniffer() {
+  if (window.__bet365SnifferInstalled) return;
+  window.__bet365SnifferInstalled = true;
 
-      if (text && text.length > 0 && text.length < 8000) {
-        out.push({
-          text: text.slice(0, 3500),
-          href,
-          depth,
-          source: depth > 0 ? "frame-walk" : "frame-root",
+  const origFetch = window.fetch;
+  if (origFetch) {
+    window.fetch = async function (...args) {
+      const res = await origFetch.apply(this, args);
+      try {
+        const clone = res.clone();
+        const ct = (clone.headers.get("content-type") || "").toLowerCase();
+        const url = resolveNetworkUrl(args[0]);
+        if (ct.includes("json")) {
+          const data = await clone.json().catch(() => null);
+          if (data) pushNetwork(url, data, "fetch");
+        } else if (ct.includes("text") || ct.includes("plain") || !ct) {
+          const text = await clone.text().catch(() => null);
+          if (text) pushNetwork(url, text, "fetch");
+        }
+      } catch (_) {}
+      return res;
+    };
+  }
+
+  const XO = XMLHttpRequest.prototype.open;
+  const XS = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    this.__bet365Url = resolveNetworkUrl(url);
+    return XO.call(this, method, url, ...rest);
+  };
+  XMLHttpRequest.prototype.send = function (...args) {
+    this.addEventListener("load", function () {
+      try {
+        const url = this.__bet365Url || "";
+        const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
+        const body = this.responseText;
+        if (!body) return;
+        if (ct.includes("json")) {
+          pushNetwork(url, JSON.parse(body), "xhr");
+        } else {
+          pushNetwork(url, body, "xhr");
+        }
+      } catch (_) {}
+    });
+    return XS.apply(this, args);
+  };
+
+  const OrigWS = window.WebSocket;
+  if (OrigWS) {
+    const Bet365WS = function (url, protocols) {
+      const ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
+      const wsUrl = resolveNetworkUrl(url);
+
+      if (isBet365NetworkUrl(wsUrl)) {
+        ws.addEventListener("message", (ev) => {
+          const text = decodeSocketData(ev.data);
+          if (text) pushNetwork(`ws:${wsUrl}`, text, "ws");
         });
       }
 
-      for (let i = 0; i < win.frames.length; i++) {
-        walkWindowFrames(win.frames[i], depth + 1, out, seen);
-      }
-    } catch (_) {}
+      return ws;
+    };
+    Bet365WS.prototype = OrigWS.prototype;
+    Object.defineProperty(Bet365WS, "CONNECTING", { value: OrigWS.CONNECTING });
+    Object.defineProperty(Bet365WS, "OPEN", { value: OrigWS.OPEN });
+    Object.defineProperty(Bet365WS, "CLOSING", { value: OrigWS.CLOSING });
+    Object.defineProperty(Bet365WS, "CLOSED", { value: OrigWS.CLOSED });
+    window.WebSocket = Bet365WS;
   }
+}
 
-  function collectFrameWalkTexts() {
-    const out = [];
-    const seen = new Set();
-    walkWindowFrames(window, 0, out, seen);
-    return out.filter(
-      (f) =>
-        f.depth > 0 ||
-        /\d{1,2}\s*[-–]\s*\d{1,2}/.test(f.text) ||
-        /\b\d{2,3}:\d{2}\b/.test(f.text)
-    );
-  }
+function initNetworkBridge() {
+  if (window.__bet365NetBridge) return;
+  window.__bet365NetBridge = true;
+
+  window.addEventListener("message", (ev) => {
+    if (ev.source !== window || ev.data?.channel !== "bet365-extractor-net") return;
+    receiveNetworkEntry(ev.data.entry);
+  });
+}
+
+function injectPageNetworkSniffer(pageSnifferSource) {
+  initNetworkBridge();
+  const script = document.createElement("script");
+  script.textContent = pageSnifferSource;
+  (document.documentElement || document.head || document.body).appendChild(script);
+  script.remove();
+}
+
+installNetworkSniffer();
+
+
+  function walkWindowFrames(win, depth, out, seen) {
+  if (!win || depth > 14 || seen.has(win)) return;
+  seen.add(win);
+
+  try {
+    const doc = win.document;
+    if (!doc) return;
+
+    const text = doc.documentElement?.innerText || doc.body?.innerText || "";
+    const href = win.location?.href || "";
+
+    if (text && text.length > 0 && text.length < 8000) {
+      out.push({
+        text: text.slice(0, 3500),
+        href,
+        depth,
+        source: depth > 0 ? "frame-walk" : "frame-root",
+      });
+    }
+
+    for (let i = 0; i < win.frames.length; i++) {
+      walkWindowFrames(win.frames[i], depth + 1, out, seen);
+    }
+  } catch (_) {}
+}
+
+function collectFrameWalkTexts() {
+  const out = [];
+  const seen = new Set();
+  walkWindowFrames(window, 0, out, seen);
+  return out.filter(
+    (f) =>
+      f.depth > 0 || /\d{1,2}\s*[-–]\s*\d{1,2}/.test(f.text) || /\b\d{2,3}:\d{2}\b/.test(f.text)
+  );
+}
+
 
   const C = {
-    title: "color:#FFD700;font-weight:bold;font-size:14px;background:#1a1a1a;padding:2px 6px;border-radius:3px",
+    title:
+      "color:#FFD700;font-weight:bold;font-size:14px;background:#1a1a1a;padding:2px 6px;border-radius:3px",
     section: "color:#00E5FF;font-weight:bold;font-size:12px",
     key: "color:#A0AEC0",
     value: "color:#FFFFFF;font-weight:bold",
@@ -2191,7 +2779,9 @@ function formatBet365TraceLogs(data) {
       seen.add(node);
       if (node.querySelectorAll) roots.push(node);
       node.querySelectorAll?.("iframe").forEach((f) => {
-        try { if (f.contentDocument) walk(f.contentDocument, d + 1); } catch (_) {}
+        try {
+          if (f.contentDocument) walk(f.contentDocument, d + 1);
+        } catch (_) {}
       });
       node.querySelectorAll?.("*").forEach((el) => {
         if (el.shadowRoot) walk(el.shadowRoot, d + 1);
@@ -2206,7 +2796,10 @@ function formatBet365TraceLogs(data) {
     const seen = new Set();
     getAllRoots().forEach((r) => {
       r.querySelectorAll(sel).forEach((el) => {
-        if (!seen.has(el)) { seen.add(el); out.push(el); }
+        if (!seen.has(el)) {
+          seen.add(el);
+          out.push(el);
+        }
       });
     });
     return out;
@@ -2215,7 +2808,10 @@ function formatBet365TraceLogs(data) {
   function clickStatsTab() {
     for (const tab of queryDeep("[class*='LocationEventsMenu_Item'], [class*='EventsMenu'] *")) {
       const t = normalize(tab.textContent);
-      if (/^Estat\.?$/i.test(t)) { tab.click(); return true; }
+      if (/^Estat\.?$/i.test(t)) {
+        tab.click();
+        return true;
+      }
     }
     return false;
   }
@@ -2256,7 +2852,8 @@ function formatBet365TraceLogs(data) {
     const odds = [];
     const seen = new Set();
 
-    const marketSels = "[class*='MarketGroup'], [class*='HorizontalMarket'], [class*='Market_Column']";
+    const marketSels =
+      "[class*='MarketGroup'], [class*='HorizontalMarket'], [class*='Market_Column']";
 
     queryDeep(marketSels).forEach((group) => {
       const market = normalize(
@@ -2281,9 +2878,8 @@ function formatBet365TraceLogs(data) {
 
           if (!isValidSelection(selection) || !isValidOdd(odd)) return;
 
-          const fullSelection = handicap && isLineValue(handicap)
-            ? `${selection} (${handicap})`
-            : selection;
+          const fullSelection =
+            handicap && isLineValue(handicap) ? `${selection} (${handicap})` : selection;
 
           const key = `${market}|${fullSelection}|${odd}`;
           if (seen.has(key)) return;
@@ -2410,7 +3006,11 @@ function formatBet365TraceLogs(data) {
       extractedAt,
       extraCandidates: [frameMatch, domMatch, fromNet.match].filter(Boolean),
     });
-    pipeline.push({ step: "matchCandidates", count: matchCandidates.length, ms: Date.now() - stepAt });
+    pipeline.push({
+      step: "matchCandidates",
+      count: matchCandidates.length,
+      ms: Date.now() - stepAt,
+    });
     stepAt = Date.now();
 
     const matchBase =
@@ -2510,20 +3110,31 @@ function formatBet365TraceLogs(data) {
     ta.focus();
     ta.select();
     let ok = false;
-    try { ok = document.execCommand("copy"); } catch (_) {}
+    try {
+      ok = document.execCommand("copy");
+    } catch (_) {}
     document.body.removeChild(ta);
     if (ok) return { ok: true, text };
-    return { ok: false, text, hint: "Clique na página Bet365 (fora do DevTools) e rode copyBet365Data() de novo" };
+    return {
+      ok: false,
+      text,
+      hint: "Clique na página Bet365 (fora do DevTools) e rode copyBet365Data() de novo",
+    };
   }
 
   function printData(data) {
     console.log(`%c⚽ Bet365 Extractor v${VERSION}`, C.title);
     console.log("%c▸ PARTIDA", C.section, data.match);
     console.log("%c▸ ESTATÍSTICAS", C.section);
-    data.stats.length ? console.table(data.stats) : console.log("%c  vazio — veja meta.tips", C.warn);
+    data.stats.length
+      ? console.table(data.stats)
+      : console.log("%c  vazio — veja meta.tips", C.warn);
     console.log("%c▸ ODDS", C.section);
-    data.odds.length ? console.table(data.odds) : console.log("%c  vazio — role até os mercados", C.warn);
-    if (!data.stats.length) console.log("%c▸ DICA: meta.visibleTextSample", C.dim, data.meta.visibleTextSample);
+    data.odds.length
+      ? console.table(data.odds)
+      : console.log("%c  vazio — role até os mercados", C.warn);
+    if (!data.stats.length)
+      console.log("%c▸ DICA: meta.visibleTextSample", C.dim, data.meta.visibleTextSample);
     console.log("%c▸ JSON", C.section);
     console.log("%c" + JSON.stringify(data, null, 2), C.json);
   }
@@ -2577,8 +3188,6 @@ function formatBet365TraceLogs(data) {
     return networkLog;
   };
 
-
-
   function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
     const blob = new Blob([text], { type: mime });
     const a = document.createElement("a");
@@ -2587,8 +3196,6 @@ function formatBet365TraceLogs(data) {
     a.click();
     URL.revokeObjectURL(a.href);
   }
-
-
 
   window.copyBet365Data = function (pretty = true) {
     const text = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
@@ -2627,6 +3234,7 @@ function formatBet365TraceLogs(data) {
 
   return data;
 })();
+
 
 // ─── AUTO-RUN: executa todos os comandos automaticamente ───────────────────
 (async function bet365AutoRunAll() {

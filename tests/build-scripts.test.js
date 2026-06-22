@@ -54,11 +54,7 @@ describe("build output", () => {
     assert.match(source, /chrome\.runtime\.onMessage/);
     assert.match(source, /buildData/);
     const hostDecls = source.match(/const BET365_HOST_RE\b/g) || [];
-    assert.equal(
-      hostDecls.length,
-      1,
-      "bundle não pode declarar BET365_HOST_RE mais de uma vez"
-    );
+    assert.equal(hostDecls.length, 1, "bundle não pode declarar BET365_HOST_RE mais de uma vez");
   });
 
   it("extension/dist/zip-utils.js expõe buildZipEntries", () => {
@@ -71,6 +67,8 @@ describe("build output", () => {
     assert.match(source, /function formatBet365DebugLogs/);
     assert.match(source, /function formatBet365TraceLogs/);
     assert.match(source, /trace\.txt/);
+    assert.match(source, /globalThis\.buildZipFilename/);
+    assert.match(source, /globalThis\.buildZipEntries/);
   });
 
   it("index-autorun.html embute o bundle auto-run completo", () => {

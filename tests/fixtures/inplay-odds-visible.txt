@@ -1,0 +1,25 @@
+Copa do Mundo 2026
+Time Casa v Time Fora
+Resultado Final
+CA
+Time Casa
+1.50
+Empate
+4.00
+Time Fora
+7.00
+Partida - Gols
+CA
+2.5
+Mais de
+2.00
+Menos de
+1.80
+Intervalo - Resultado
+CA
+Time Casa
+2.10
+Empate
+2.20
+Time Fora
+7.50

@@ -1,35 +1,41 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bet365 Extractor</title>
-  <link rel="stylesheet" href="popup.css" />
-</head>
-<body>
-  <header>
-    <h1>Bet365 <span>Extractor</span></h1>
-    <p class="version">v…</p>
-  </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bet365 Extractor</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Bet365 <span>Extractor</span></h1>
+      <p class="version">v…</p>
+    </header>
 
-  <p id="status" class="status">Abra um jogo na Bet365</p>
+    <p id="status" class="status">Abra um jogo na Bet365</p>
 
-  <div id="preview" class="preview hidden"></div>
+    <div id="preview" class="preview hidden"></div>
 
-  <button id="btnExtract" class="btn-primary">Extrair e Baixar ZIP</button>
+    <button id="btnExtract" class="btn-primary">Extrair e Baixar ZIP</button>
 
-  <details class="help">
-    <summary>Instalação / uso</summary>
-    <ol>
-      <li>Abra a página do jogo (<code>#/IP/EV...</code> ao vivo ou <code>#/AC/.../E...</code> pré-jogo)</li>
-      <li>Clique na aba <strong>Estat.</strong> se stats vierem vazias</li>
-      <li>Clique em <strong>Extrair ZIP</strong></li>
-      <li>ZIP contém <code>data.json</code>, <code>logs.txt</code>, <code>debug.txt</code>, <code>trace.txt</code>, <code>meta.json</code></li>
-    </ol>
-  </details>
+    <details class="help">
+      <summary>Instalação / uso</summary>
+      <ol>
+        <li>
+          Abra a página do jogo (<code>#/IP/EV...</code> ao vivo ou
+          <code>#/AC/.../E...</code> pré-jogo)
+        </li>
+        <li>Clique na aba <strong>Estat.</strong> se stats vierem vazias</li>
+        <li>Clique em <strong>Extrair ZIP</strong></li>
+        <li>
+          ZIP contém <code>data.json</code>, <code>logs.txt</code>, <code>debug.txt</code>,
+          <code>trace.txt</code>, <code>meta.json</code>
+        </li>
+      </ol>
+    </details>
 
-  <script src="../vendor/jszip.min.js"></script>
-  <script src="../dist/zip-utils.js"></script>
-  <script src="popup.js"></script>
-</body>
+    <script src="../vendor/jszip.min.js"></script>
+    <script src="../dist/zip-utils.js"></script>
+    <script src="popup.js"></script>
+  </body>
 </html>

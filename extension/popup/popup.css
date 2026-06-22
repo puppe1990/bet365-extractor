@@ -11,7 +11,11 @@
   --mono: "SF Mono", Consolas, monospace;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
 body {
   width: 320px;
@@ -22,10 +26,17 @@ body {
   line-height: 1.45;
 }
 
-header { margin-bottom: 12px; }
+header {
+  margin-bottom: 12px;
+}
 
-h1 { font-size: 1.1rem; font-weight: 700; }
-h1 span { color: var(--yellow); }
+h1 {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+h1 span {
+  color: var(--yellow);
+}
 
 .version {
   font-size: 0.72rem;
@@ -40,8 +51,12 @@ h1 span { color: var(--yellow); }
   min-height: 1.2em;
 }
 
-.status.ok { color: var(--green); }
-.status.err { color: var(--red); }
+.status.ok {
+  color: var(--green);
+}
+.status.err {
+  color: var(--red);
+}
 
 .preview {
   background: var(--surface);
@@ -52,9 +67,13 @@ h1 span { color: var(--yellow); }
   margin-bottom: 12px;
 }
 
-.preview.hidden { display: none; }
+.preview.hidden {
+  display: none;
+}
 
-.preview strong { color: var(--yellow); }
+.preview strong {
+  color: var(--yellow);
+}
 
 .btn-primary {
   width: 100%;
@@ -79,7 +98,10 @@ h1 span { color: var(--yellow); }
   color: var(--muted);
 }
 
-.help summary { cursor: pointer; color: var(--text); }
+.help summary {
+  cursor: pointer;
+  color: var(--text);
+}
 
 .help ol {
   margin: 8px 0 0 18px;
