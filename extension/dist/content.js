@@ -2656,14 +2656,13 @@ const PLAYER_SHORT_NAME_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,3
 const PLAYER_FULL_NAME_RE = /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;
 const LINEUP_STOP_RE = /^(Tabela|Cronologia|Estat\.|Estatísticas de Jogador|FINALIZA)/i;
 
-const TIMELINE_SECTION_STOP_RE = /^(Escalação|Tabela|Jogador\s*[-/]|FINALIZA(COES|ÇÕES))$/i;
+const TIMELINE_SECTION_STOP_RE = /^(Escalação|Tabela|FINALIZA(COES|ÇÕES))$/i;
 
 const TIMELINE_STOP_RE =
   /^(Escalação|Tabela|Jogador\s*[-/]|Resultado Final|Marcadores de Gols|Encontro\s*-|N[uú]mero de Cart|Ambos Marcam|Argentina\s*-\s*Gols|Áustria\s*-\s*Gols|Informação e Atrasos|Ajuda|Depósitos|bet365|Política de|Jogue com responsabilidade|Hora do Servidor|FINALIZA|Áreas de A[cç]ão|Mostrar Mais|SUBSTITUIÇÃO\+)$/i;
 
 const TIMELINE_ORDINAL_RE = /[º°]/;
-const TIMELINE_EVENT_HEADER_RE =
-  /^\d+[º°]\s*(Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
+const TIMELINE_EVENT_HEADER_RE = /^\d+[º°]\s*(Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
 const TIMELINE_EVENT_RE =
   /\b(?:Goal|Gol)\b|Escanteio|Impedimento|P[eê]nalti|Cart[aã]o|\bAssist\b|Chute|Substitui|Perdeu o P[eê]nalti/i;
 
@@ -2737,9 +2736,7 @@ function isTimelineStopLine(line) {
 function isTimelineSectionStopLine(line) {
   const s = normalize(line);
   if (!s) return false;
-  if (TIMELINE_SECTION_STOP_RE.test(s)) return true;
-  if (/^Jogador\s*[-/]/i.test(s)) return true;
-  return false;
+  return TIMELINE_SECTION_STOP_RE.test(s);
 }
 
 function isTimelineNoiseDetail(line) {
@@ -2749,7 +2746,8 @@ function isTimelineNoiseDetail(line) {
   if (/^\d{1,3}:\d{2}$/.test(s)) return true;
   if (/^CA$/i.test(s)) return true;
   if (/^\d+\+$/.test(s)) return true;
-  if (/^\d+°$/.test(s)) return true;
+  if (/^\d+[º°]$/.test(s)) return true;
+  if (isTimelineMarketLeakLine(s)) return true;
   if (looksLikeOddToken(s)) return true;
   if (
     /^(Mais de|Menos de|Exatamente|A Qualquer Momento|Para Marcar ou Dar Assistência|Jogador a Marcar ou Dar Assistência)$/i.test(
@@ -2780,6 +2778,23 @@ function isTimelineNoiseDetail(line) {
   if (isPlayerShortName(s) && !TIMELINE_EVENT_RE.test(s)) return true;
   if (/\d+\.\d{2}/.test(s) && !TIMELINE_EVENT_RE.test(s)) return true;
   if (/\|/.test(s) && !TIMELINE_EVENT_RE.test(s)) return true;
+  return false;
+}
+
+function isTimelineMarketLeakLine(line) {
+  const s = normalize(line);
+  if (!s) return false;
+  if (/^Próximo Minuto/i.test(s)) return true;
+  if (/^Gol\s*\|\s*Escanteio/i.test(s)) return true;
+  if (/2[º°]\s*Gol\s*-\s*Método/i.test(s)) return true;
+  if (/Sem\s+2[º°]?\s*gol/i.test(s)) return true;
+  if (/Hora do \d/i.test(s)) return true;
+  if (/Gol antes do minuto/i.test(s)) return true;
+  if (/Sem Gol antes do minuto/i.test(s)) return true;
+  const pipes = (s.match(/\|/g) || []).length;
+  if (pipes >= 3 && /Gol|Escanteio|Cart[aã]o|P[eê]nalti|M[eé]todo|Gol Contra/i.test(s)) {
+    return true;
+  }
   return false;
 }
 
@@ -2816,6 +2831,9 @@ function extractTimelineSectionLines(text) {
 
 function shouldKeepTimelineEvent(details) {
   if (!details.length) return false;
+  const description = details.join(" | ");
+  if (isTimelineMarketLeakLine(description)) return false;
+  if (details.some((d) => isTimelineMarketLeakLine(d))) return false;
   const type = inferTimelineType(details);
   if (type !== "event") return true;
   return details.some((d) => TIMELINE_EVENT_RE.test(d));
@@ -2889,7 +2907,7 @@ function parseTimelineLines(lines) {
       if (current?.details.length) {
         if (current.awaitingMinute) {
           flushTimelineGroups(events, minute, current.details);
-          current = { minute, details: [], awaitingMinute: false };
+          current = null;
           continue;
         }
         flushTimelineGroups(events, current.minute, current.details);
@@ -2917,12 +2935,9 @@ function parseTimelineLines(lines) {
 }
 
 function parseTimelineFromText(text) {
-  const allLines = linesFromText(text);
   const section = extractTimelineSectionLines(text);
-  const events = [];
-  if (section?.length) events.push(...parseTimelineLines(section));
-  events.push(...parseTimelineLines(allLines));
-  return dedupeTimelineEvents(events);
+  if (section?.length) return dedupeTimelineEvents(parseTimelineLines(section));
+  return dedupeTimelineEvents(parseTimelineLines(linesFromText(text)));
 }
 
 function mergeTimelineEvents(...lists) {

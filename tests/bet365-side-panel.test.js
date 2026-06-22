@@ -55,6 +55,25 @@ describe("parseTimelineFromText", () => {
     assert.ok(!events.some((e) => e.type === "corner"));
   });
 
+  it("não cola escanteio no minuto do gol após awaitingMinute", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-france-iraq.txt"));
+    const corners = events.filter((e) => e.type === "corner");
+    const goal = events.find((e) => e.type === "goal");
+
+    assert.equal(goal?.minute, 15);
+    assert.equal(corners.find((e) => /1[º°]/.test(e.description))?.minute, 8);
+    assert.ok(!events.some((e) => e.type === "corner" && e.minute === 15));
+  });
+
+  it("ignora vazamento de mercados instantâneos na cronologia", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-market-leak.txt"));
+
+    assert.ok(!events.some((e) => /Pênalti Atribuído/.test(e.description)));
+    assert.ok(!events.some((e) => /2.?\s*Gol\s*-\s*Método/i.test(e.description)));
+    assert.equal(events.find((e) => e.type === "goal")?.minute, 15);
+    assert.equal(events.filter((e) => e.type === "corner").length, 2);
+  });
+
   it("separa gol e substituição quando o minuto do gol vem depois no DOM", () => {
     const events = parseTimelineFromText(readFixture("side-panel-timeline-france-iraq.txt"));
     const goal = events.find((e) => e.type === "goal");
