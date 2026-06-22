@@ -926,9 +926,7 @@ function extractPageTextFromMerged(text) {
 }
 
 function extractHeaderSlice(text, maxLines = 30) {
-  return linesFromText(extractPageTextFromMerged(text))
-    .slice(0, maxLines)
-    .join("\n");
+  return linesFromText(extractPageTextFromMerged(text)).slice(0, maxLines).join("\n");
 }
 
 function parseVsLineStrict(text) {
@@ -2042,7 +2040,15 @@ function finalizeMatchData(match, visibleText, meta, extractedAt, pageUrl, optio
   };
 }
 
-function finalizeMatchWithMarkets(match, odds, visibleText, meta, extractedAt, pageUrl, options = {}) {
+function finalizeMatchWithMarkets(
+  match,
+  odds,
+  visibleText,
+  meta,
+  extractedAt,
+  pageUrl,
+  options = {}
+) {
   const finalized = finalizeMatchData(match, visibleText, meta, extractedAt, pageUrl, {
     ...options,
     odds,
@@ -2176,6 +2182,135 @@ function pickSmallestTabCandidates(candidates) {
   return [...byLabel.values()];
 }
 
+const STATS_SUB_TAB_KEYS = [
+  "marcadores",
+  "chutes",
+  "cartoesFaltas",
+  "estatisticasJogador",
+  "resultado",
+  "escanteios",
+  "gols",
+  "tempos",
+  "outros",
+];
+
+const STATS_SUB_TAB_LABELS = [
+  "Marcadores",
+  "Chutes",
+  "Cartões/Faltas",
+  "Estatísticas do Jogador",
+  "Resultado",
+  "Escanteios",
+  "Gols",
+  "1º Tempo/2º Tempo",
+  "Outros",
+];
+
+const STATS_SUB_TAB_VISIT_BUDGET_MS = 8000;
+const STATS_SUB_TAB_CLICK_DELAY_MS = 200;
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, (ch) => `\\${ch}`);
+}
+
+const STATS_SUB_TAB_PATTERNS = STATS_SUB_TAB_LABELS.map(
+  (label) => new RegExp(`^${escapeRegExp(label)}$`, "i")
+);
+
+const OUTROS_TAB_RE = /^Outr(?:os)?(?:\s*[›>])?$/i;
+
+function normalizeStatsSubTabLabel(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function statsSubTabKey(text) {
+  const s = normalizeStatsSubTabLabel(text);
+  if (OUTROS_TAB_RE.test(s)) return "Outros";
+  const idx = STATS_SUB_TAB_PATTERNS.findIndex((re) => re.test(s));
+  return idx >= 0 ? STATS_SUB_TAB_LABELS[idx] : null;
+}
+
+function statsSubTabKeyFromKey(key) {
+  const idx = STATS_SUB_TAB_KEYS.indexOf(key);
+  return idx >= 0 ? STATS_SUB_TAB_LABELS[idx] : null;
+}
+
+function gluedStatsSubTabCount(text) {
+  const s = normalizeStatsSubTabLabel(text);
+  if (!s) return 0;
+  let count = STATS_SUB_TAB_LABELS.filter((label) =>
+    new RegExp(escapeRegExp(label), "i").test(s)
+  ).length;
+  if (OUTROS_TAB_RE.test(s)) count += 1;
+  return count;
+}
+
+function scoreStatsSubTabBarContainer(text) {
+  const count = gluedStatsSubTabCount(text);
+  if (count < 3) return 0;
+  let score = count;
+  if (/Marcadores/i.test(text)) score += 2;
+  if (/Chutes/i.test(text)) score += 2;
+  if (/Escanteios/i.test(text)) score += 1;
+  if (/Cartões\/Faltas/i.test(text)) score += 1;
+  return score;
+}
+
+function leafStatsSubTabKey(text, childTexts = []) {
+  const key = statsSubTabKey(text);
+  if (!key) return null;
+  if (gluedStatsSubTabCount(text) > 1) return null;
+  const childKeys = childTexts.map((childText) => statsSubTabKey(childText)).filter(Boolean);
+  if (childKeys.includes(key)) return null;
+  return key;
+}
+
+function mergeStatsSubTabTexts(textBySubTab = {}) {
+  return STATS_SUB_TAB_KEYS.map((key) => textBySubTab[key])
+    .filter(Boolean)
+    .join("\n---STATS-SUBTAB---\n");
+}
+
+function summarizeStatsSubTabCapture(textBySubTab = {}, subTabClicks = {}) {
+  return Object.fromEntries(
+    STATS_SUB_TAB_KEYS.map((key) => [
+      key,
+      {
+        clicked: Boolean(subTabClicks[key]),
+        length: String(textBySubTab[key] || "").length,
+        captured: Boolean(textBySubTab[key]),
+      },
+    ])
+  );
+}
+
+function extractStatsFromSubTabTexts(textBySubTab = {}, pageUrl = "") {
+  const stats = [];
+  const seen = new Set();
+
+  const push = (row) => {
+    const key = `${row.subTab || ""}|${row.label}|${row.home}|${row.away}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    stats.push(row);
+  };
+
+  for (const key of STATS_SUB_TAB_KEYS) {
+    const text = textBySubTab[key];
+    if (!text) continue;
+
+    for (const row of parseGluedStats(text)) {
+      push({ ...row, subTab: key, source: `stats-subtab:${key}` });
+    }
+
+    for (const row of extractStatsFromVisibleText(text, pageUrl)) {
+      push({ ...row, subTab: key, source: `stats-subtab:${key}` });
+    }
+  }
+
+  return stats;
+}
+
 function normalize(t) {
   return (t || "").replace(/\s+/g, " ").trim();
 }
@@ -2199,7 +2334,7 @@ function isValidOdd(n) {
 const SIDE_PANEL_TAB_KEYS = ["stats", "playerStats", "timeline", "lineup"];
 
 const SIDE_PANEL_TAB_LABELS = {
-  stats: /^Estat\.?$/i,
+  stats: /^Estat\.?$|^Estatísticas$/i,
   playerStats: /^Estatísticas de Jogador$/i,
   timeline: /^Cronologia$/i,
   lineup: /^Escalação$/i,
@@ -2788,7 +2923,8 @@ function mergeSidePanelTabText(scoped, full, key) {
 }
 
 function extractSidePanelFromTexts(textByTab = {}) {
-  const statsText = textByTab.stats || "";
+  const statsSubTabMerged = textByTab.statsSubTabMerged || "";
+  const statsText = [textByTab.stats || "", statsSubTabMerged].filter(Boolean).join("\n");
   const playerText = textByTab.playerStats || "";
   const timelineText = textByTab.timeline || "";
   const lineupText = textByTab.lineup || "";
@@ -2812,12 +2948,14 @@ function extractSidePanelFromTexts(textByTab = {}) {
       parsePlayerFinalizationsFromText(panelMerged)
     ),
     actionAreas: parseActionAreasFromText(statsText) || parseActionAreasFromText(playerText),
-    tabCapture: Object.fromEntries(
-      Object.entries(textByTab).map(([k, v]) => [
-        k,
-        { length: String(v || "").length, captured: Boolean(v) },
-      ])
-    ),
+    tabCapture: {
+      ...Object.fromEntries(
+        Object.entries(textByTab)
+          .filter(([k]) => !k.startsWith("statsSub"))
+          .map(([k, v]) => [k, { length: String(v || "").length, captured: Boolean(v) }])
+      ),
+      statsSubTabs: textByTab.statsSubTabCapture || null,
+    },
   };
 }
 
@@ -3409,18 +3547,179 @@ function collectFrameWalkTexts() {
     return getAllVisibleText();
   }
 
-  function clickSidePanelTab(labelRe) {
-    for (const tab of queryDeep("[class*='LocationEventsMenu_Item'], [class*='EventsMenu'] *")) {
-      const t = normalize(tab.textContent);
-      if (labelRe.test(t)) {
-        try {
-          tab.scrollIntoView({ block: "nearest", behavior: "instant" });
-        } catch (_) {}
-        tab.click();
-        return tab;
+  function dispatchPanelClick(el) {
+    try {
+      el.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window })
+      );
+      el.dispatchEvent(
+        new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window })
+      );
+      el.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
+      );
+    } catch (_) {}
+    try {
+      el.click();
+    } catch (_) {}
+  }
+
+  function normalizeStatsLeafText(el) {
+    return normalizeStatsSubTabLabel(el?.innerText || el?.textContent || "");
+  }
+
+  function getLeafStatsSubTabKey(el) {
+    const childTexts = [...(el?.children || [])].map((child) => normalizeStatsLeafText(child));
+    return leafStatsSubTabKey(normalizeStatsLeafText(el), childTexts);
+  }
+
+  function walkElementsWithin(root, consider) {
+    if (!root) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let node = walker.nextNode();
+    while (node) {
+      consider(node);
+      node = walker.nextNode();
+    }
+  }
+
+  function scrollStatsSubTabBars(root) {
+    const bars = [];
+    const scope = root || document.documentElement;
+    walkElementsWithin(scope, (el) => {
+      const cls = String(el.className || "");
+      if (
+        /Classification|HorizontalScroll|StatsRibbon|StatsCategory|SubNav|Scroller/i.test(cls) &&
+        el.scrollWidth > el.clientWidth + 8
+      ) {
+        bars.push(el);
+      }
+    });
+    for (const bar of [...new Set(bars)]) {
+      try {
+        bar.scrollLeft = bar.scrollWidth;
+      } catch (_) {}
+    }
+  }
+
+  function collectStatsSubTabCandidates(root) {
+    const candidates = [];
+    const seen = new Set();
+    const scope = root || document.documentElement;
+
+    const consider = (el) => {
+      try {
+        const label = getLeafStatsSubTabKey(el);
+        if (!label) return;
+        const key = STATS_SUB_TAB_KEYS[STATS_SUB_TAB_LABELS.indexOf(label)];
+        if (!key || seen.has(key)) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 12 || rect.height < 6) return;
+        seen.add(key);
+        candidates.push({ el, key, label, area: rect.width * rect.height });
+      } catch (_) {}
+    };
+
+    const containers = [];
+    walkElementsWithin(scope, (el) => {
+      const score = scoreStatsSubTabBarContainer(el.textContent || "");
+      if (score >= 5) containers.push({ el, score });
+    });
+    containers.sort((a, b) => b.score - a.score);
+
+    for (const { el } of containers.slice(0, 3)) {
+      walkElementsWithin(el, consider);
+      if (candidates.length >= STATS_SUB_TAB_KEYS.length) break;
+    }
+
+    if (candidates.length < 3) {
+      const selectors = [
+        "[class*='StatsCategory'] *",
+        "[class*='MatchStats'] *",
+        "[class*='StatsRibbon'] *",
+        "[class*='SubNav'] *",
+        "[class*='LocationEventsMenu_Item']",
+        "[class*='EventsMenu'] *",
+        "[class*='HorizontalScroll'] [class*='Item']",
+        "button",
+        "[role='tab']",
+      ];
+      for (const sel of selectors) {
+        (scope.querySelectorAll ? scope.querySelectorAll(sel) : []).forEach(consider);
+        if (candidates.length >= STATS_SUB_TAB_KEYS.length) break;
+      }
+    }
+
+    const byKey = new Map();
+    candidates.forEach((tab) => {
+      const prev = byKey.get(tab.key);
+      if (!prev || tab.area < prev.area) byKey.set(tab.key, tab);
+    });
+    return [...byKey.values()];
+  }
+
+  function clickSidePanelTab(labelRe, scopeRoot = null) {
+    const scopes = scopeRoot ? [scopeRoot] : [];
+    queryDeep(
+      "[class*='LocationEventsMenu'], [class*='MatchLiveModule'], [class*='InPlayModule'], [class*='EventView'], [class*='StatsModule']"
+    ).forEach((el) => scopes.push(el));
+    if (!scopes.length) scopes.push(document.documentElement);
+
+    const selectors = [
+      "[class*='LocationEventsMenu_Item']",
+      "[class*='EventsMenu'] *",
+      "[class*='StatsCategory'] *",
+      "[class*='MatchStatsMenu'] *",
+      "[class*='SubNav'] *",
+      "button",
+      "[role='tab']",
+    ];
+
+    for (const scope of [...new Set(scopes)]) {
+      for (const sel of selectors) {
+        const nodes = scope.querySelectorAll ? [...scope.querySelectorAll(sel)] : [];
+        for (const tab of nodes) {
+          const t = normalize(tab.textContent);
+          if (!labelRe.test(t)) continue;
+          try {
+            tab.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
+          } catch (_) {}
+          dispatchPanelClick(tab);
+          return tab;
+        }
       }
     }
     return null;
+  }
+
+  async function collectStatsSubTabTexts(statsRoot) {
+    const textBySubTab = {};
+    const subTabClicks = {};
+    const startedAt = Date.now();
+
+    scrollStatsSubTabBars(statsRoot);
+    let tabs = collectStatsSubTabCandidates(statsRoot);
+
+    for (const key of STATS_SUB_TAB_KEYS) {
+      if (Date.now() - startedAt > STATS_SUB_TAB_VISIT_BUDGET_MS) break;
+      let tab = tabs.find((t) => t.key === key);
+      if (!tab) {
+        scrollStatsSubTabBars(statsRoot);
+        tabs = collectStatsSubTabCandidates(statsRoot);
+        tab = tabs.find((t) => t.key === key);
+      }
+      if (!tab) continue;
+      try {
+        tab.el.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
+        dispatchPanelClick(tab.el);
+        subTabClicks[key] = true;
+        await delay(STATS_SUB_TAB_CLICK_DELAY_MS);
+        const panelText = getSidePanelText(tab.el);
+        textBySubTab[key] = panelText ? `${tab.label}\n${panelText}` : tab.label;
+      } catch (_) {}
+    }
+
+    return { textBySubTab, subTabClicks };
   }
 
   function clickStatsTab() {
@@ -3436,14 +3735,34 @@ function collectFrameWalkTexts() {
     const tabClicks = {};
     const fullText = getAllVisibleText();
 
+    const statsTab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS.stats);
+    tabClicks.stats = Boolean(statsTab);
+    if (statsTab) await delay(250);
+
+    const statsRoot = findSidePanelRoot(statsTab);
+    const { textBySubTab, subTabClicks } = await collectStatsSubTabTexts(statsRoot);
+    textByTab.statsSubTabs = textBySubTab;
+    textByTab.statsSubTabClicks = subTabClicks;
+    textByTab.statsSubTabMerged = mergeStatsSubTabTexts(textBySubTab);
+    textByTab.statsSubTabCapture = summarizeStatsSubTabCapture(textBySubTab, subTabClicks);
+
+    const statsPanelText = [
+      textByTab.statsSubTabMerged,
+      getSidePanelText(statsTab),
+    ]
+      .filter(Boolean)
+      .join("\n---STATS-PANEL---\n");
+    textByTab.stats = mergeSidePanelTabText(statsPanelText, fullText, "stats");
+
     for (const key of SIDE_PANEL_TAB_KEYS) {
+      if (key === "stats") continue;
       const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key]);
       tabClicks[key] = Boolean(tab);
       if (tab) await delay(250);
       textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
     }
 
-    return { textByTab, tabClicks };
+    return { textByTab, tabClicks, statsSubTabClicks: subTabClicks };
   }
 
   function isScrollableElement(el) {
@@ -4053,14 +4372,17 @@ function collectFrameWalkTexts() {
     stepAt = Date.now();
 
     const extractedAt = new Date().toISOString();
-    const { textByTab, tabClicks } = await collectSidePanelTexts();
+    const { textByTab, tabClicks, statsSubTabClicks } = await collectSidePanelTexts();
     const pageText = getAllVisibleText();
     const sideText = Object.values(textByTab).filter(Boolean).join("\n---SIDE-TAB---\n");
     const visibleText = sideText ? `${pageText}\n---PAGE---\n${sideText}` : pageText;
     pipeline.push({
       step: "sidePanelTabs",
       ok: Object.values(tabClicks).some(Boolean),
-      detail: SIDE_PANEL_TAB_KEYS.map((k) => `${k}=${tabClicks[k] ? "ok" : "miss"}`).join(", "),
+      detail: [
+        SIDE_PANEL_TAB_KEYS.map((k) => `${k}=${tabClicks[k] ? "ok" : "miss"}`).join(", "),
+        `subtabs=${STATS_SUB_TAB_KEYS.filter((k) => statsSubTabClicks?.[k]).join(",") || "none"}`,
+      ].join(" | "),
       ms: Date.now() - stepAt,
     });
     stepAt = Date.now();
@@ -4128,6 +4450,7 @@ function collectFrameWalkTexts() {
     stepAt = Date.now();
 
     const stats = mergeStats(
+      extractStatsFromSubTabTexts(textByTab.statsSubTabs, location.href),
       extractStatsFromVisibleText(textByTab.stats || visibleText, location.href),
       extractStatsFromDOM(),
       fromNet.stats
@@ -4191,6 +4514,7 @@ function collectFrameWalkTexts() {
       sidePanelLineupCaptured: Boolean(sidePanel.lineup),
       sidePanelFinalizationsCount: sidePanel.playerFinalizations.length,
       sidePanelActionAreas: sidePanel.actionAreas || null,
+      statsSubTabsCaptured: Object.values(statsSubTabClicks || {}).filter(Boolean).length,
       leftColumnScrollSteps: mergedScroll.scrollSteps,
       mainWorldScrollSteps: mainScrollCollect.scrollSteps,
       mainWorldPlayerMarkets: mainScrollCollect.playerMarkets ?? 0,

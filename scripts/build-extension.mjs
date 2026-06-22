@@ -25,6 +25,9 @@ const urlHelpers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-url.js"
 const parsers = stripModuleSyntax(readFileSync(join(root, "lib/bet365-parsers.js"), "utf8"));
 const sidePanel = stripModuleSyntax(readFileSync(join(root, "lib/bet365-side-panel.js"), "utf8"));
 const marketTabs = stripModuleSyntax(readFileSync(join(root, "lib/bet365-market-tabs.js"), "utf8"));
+const statsSubtabs = stripModuleSyntax(
+  readFileSync(join(root, "lib/bet365-stats-subtabs.js"), "utf8")
+);
 const format = stripModuleSyntax(readFileSync(join(root, "lib/bet365-format.js"), "utf8"));
 const zip = stripModuleSyntax(readFileSync(join(root, "lib/bet365-zip.js"), "utf8"));
 
@@ -42,6 +45,7 @@ const parserBundle = [
   urlHelpers,
   parsers,
   marketTabs,
+  statsSubtabs,
   sidePanel,
 ].join("\n\n");
 const inject = (source, marker, chunk) => source.split(marker).join(chunk);
