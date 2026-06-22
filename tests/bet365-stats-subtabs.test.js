@@ -8,6 +8,7 @@ import {
   STATS_SUB_TAB_KEYS,
   collectStatsSubTabCandidatesFromNodes,
   extractStatsFromSubTabTexts,
+  ingestSidePanelTabStats,
   isStatsSubTabLeafText,
   leafStatsSubTabKey,
   looksLikeLiveStatsPanelText,
@@ -140,5 +141,42 @@ describe("bet365 stats sub-tabs", () => {
     });
 
     assert.match(merged, /Marcadores[\s\S]*---STATS-SUBTAB---[\s\S]*Chutes/);
+  });
+
+  it("coleta sub-abas sem filtro de faixa quando band está desligado", () => {
+    const picked = collectStatsSubTabCandidatesFromNodes(
+      [
+        {
+          text: "Escanteios",
+          rect: { top: 260, left: 520, width: 80, height: 22 },
+          childTexts: [],
+        },
+      ],
+      1200,
+      { requireBand: false }
+    );
+
+    assert.deepEqual(
+      picked.map((t) => t.key),
+      ["escanteios"]
+    );
+  });
+
+  it("mapeia abas do painel Marcadores de Gols e Lateral para sub-abas de stats", () => {
+    const goalScorers = readFixture("side-panel-goal-scorers.txt");
+    const lateral = readFixture("side-panel-lateral-escanteios.txt");
+    const { textBySubTab, subTabClicks } = ingestSidePanelTabStats(
+      { goalScorers, lateral },
+      {},
+      {}
+    );
+
+    assert.ok(textBySubTab.marcadores?.includes("Kylian Mbappe"));
+    assert.ok(textBySubTab.escanteios?.includes("Escanteios"));
+    assert.equal(subTabClicks.marcadores, true);
+    assert.equal(subTabClicks.escanteios, true);
+
+    const stats = extractStatsFromSubTabTexts(textBySubTab);
+    assert.ok(stats.some((s) => s.label === "Escanteios" && s.home === "4" && s.away === "2"));
   });
 });

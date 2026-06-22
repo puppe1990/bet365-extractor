@@ -2493,19 +2493,52 @@ function leafStatsSubTabKey(text, childTexts = []) {
   return key;
 }
 
-function collectStatsSubTabCandidatesFromNodes(nodes, innerWidth = 1200) {
+const SIDE_PANEL_STATS_TAB_MAP = {
+  goalScorers: "marcadores",
+  lateral: "escanteios",
+};
+
+function looksLikeGoalScorersPanelText(text) {
+  return /Marcadores de Gols?|Marcadores\b/i.test(String(text || "")) && /['′]|\bxG\b/i.test(text);
+}
+
+function looksLikeLateralStatsPanelText(text) {
+  const s = String(text || "");
+  return /Escanteios/i.test(s) || (/Lateral/i.test(s) && /Laterais?/i.test(s));
+}
+
+function ingestSidePanelTabStats(textByTab = {}, textBySubTab = {}, subTabClicks = {}) {
+  const out = { ...textBySubTab };
+  const clicks = { ...subTabClicks };
+
+  for (const [panelKey, subTabKey] of Object.entries(SIDE_PANEL_STATS_TAB_MAP)) {
+    const text = String(textByTab[panelKey] || "");
+    if (!text || out[subTabKey]) continue;
+    if (panelKey === "goalScorers" && !looksLikeGoalScorersPanelText(text)) continue;
+    if (panelKey === "lateral" && !looksLikeLateralStatsPanelText(text)) continue;
+    out[subTabKey] = text;
+    clicks[subTabKey] = true;
+  }
+
+  return { textBySubTab: out, subTabClicks: clicks };
+}
+
+function collectStatsSubTabCandidatesFromNodes(nodes, innerWidth = 1200, options = {}) {
+  const requireBand = options.requireBand !== false;
   const candidates = [];
   const seen = new Set();
 
   for (const node of nodes) {
     const text = normalizeStatsSubTabLabel(node.text);
-    const childTexts = (node.childTexts || []).map((childText) => normalizeStatsSubTabLabel(childText));
+    const childTexts = (node.childTexts || []).map((childText) =>
+      normalizeStatsSubTabLabel(childText)
+    );
     const label = leafStatsSubTabKey(text, childTexts);
     if (!label) continue;
     const key = STATS_SUB_TAB_KEYS[STATS_SUB_TAB_LABELS.indexOf(label)];
     if (!key || seen.has(key)) continue;
     const rect = node.rect;
-    if (!isInSidePanelTabBand(rect, innerWidth)) continue;
+    if (requireBand && !isInSidePanelTabBand(rect, innerWidth)) continue;
     seen.add(key);
     candidates.push({
       key,
@@ -2590,14 +2623,25 @@ function isValidOdd(n) {
   return n >= 1.01 && n <= 501;
 }
 
-const SIDE_PANEL_TAB_KEYS = ["stats", "playerStats", "timeline", "lineup"];
+const SIDE_PANEL_TAB_KEYS = [
+  "stats",
+  "goalScorers",
+  "lateral",
+  "playerStats",
+  "timeline",
+  "lineup",
+];
 
 const SIDE_PANEL_TAB_LABELS = {
   stats: /^Estat\.?$|^Estatísticas$/i,
+  goalScorers: /^Marcadores de Gols?$/i,
+  lateral: /^Lateral$/i,
   playerStats: /^Estatísticas de Jogador$/i,
   timeline: /^Cronologia$/i,
   lineup: /^Escalação$/i,
 };
+
+const SIDE_PANEL_STATS_HARVEST_KEYS = ["goalScorers", "lateral"];
 
 const PLAYER_SHORT_NAME_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;
 const PLAYER_FULL_NAME_RE = /^[A-ZÀ-Ú][a-zà-ú'`-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'`.-]+){1,4}$/;
@@ -3184,7 +3228,14 @@ function mergeSidePanelTabText(scoped, full, key) {
   const fullText = String(full || "");
   if (!scopedText) return fullText;
   if (!fullText) return scopedText;
-  if (key === "stats" || key === "timeline" || key === "playerStats" || key === "lineup") {
+  if (
+    key === "stats" ||
+    key === "goalScorers" ||
+    key === "lateral" ||
+    key === "timeline" ||
+    key === "playerStats" ||
+    key === "lineup"
+  ) {
     return `${scopedText}\n---PAGE---\n${fullText}`;
   }
   return scopedText;
@@ -3192,7 +3243,14 @@ function mergeSidePanelTabText(scoped, full, key) {
 
 function extractSidePanelFromTexts(textByTab = {}) {
   const statsSubTabMerged = textByTab.statsSubTabMerged || "";
-  const statsText = [textByTab.stats || "", statsSubTabMerged].filter(Boolean).join("\n");
+  const statsText = [
+    textByTab.stats || "",
+    textByTab.goalScorers || "",
+    textByTab.lateral || "",
+    statsSubTabMerged,
+  ]
+    .filter(Boolean)
+    .join("\n");
   const playerText = textByTab.playerStats || "";
   const timelineText = textByTab.timeline || "";
   const lineupText = textByTab.lineup || "";
@@ -3540,6 +3598,8 @@ const SIDE_PANEL_TAB_LEAF_SELECTORS = [
 
 const SIDE_PANEL_TAB_LABEL_PATTERNS = {
   stats: [/^Estat\.?$/, /^Estatísticas?$/],
+  goalScorers: [/^Marcadores de Gols?$/],
+  lateral: [/^Lateral$/],
   playerStats: [/^Estatísticas de Jogador$/],
   timeline: [/^Cronologia$/],
   lineup: [/^Escalação$/],
@@ -3578,6 +3638,9 @@ const SIDE_PANEL_DISCOVERY_LABELS = [
   "Cronologia",
   "Escalação",
   "Estatísticas de Jogador",
+  "Marcadores de Gols",
+  "Marcadores de Gol",
+  "Lateral",
 ];
 
 function gluedSidePanelTabCount(text) {
@@ -3948,7 +4011,7 @@ function collectFrameWalkTexts() {
     let bestScore = 0;
     for (const el of roots) {
       const t = el.innerText || "";
-      if (!/Estat\.?|Cronologia|Escalação/i.test(t)) continue;
+      if (!/Estat\.?|Cronologia|Escalação|Marcadores de Gol|Lateral/i.test(t)) continue;
       const score =
         (t.match(/xG|Ataques|Cronologia|Escalação|FINALIZA/i) || []).length * 120 +
         Math.min(t.length, 4000);
@@ -4115,7 +4178,13 @@ function collectFrameWalkTexts() {
       }
     }
 
-    return collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth).map((tab) => ({
+    let picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth);
+    if (!picked.length) {
+      picked = collectStatsSubTabCandidatesFromNodes(nodes, window.innerWidth, {
+        requireBand: false,
+      });
+    }
+    return picked.map((tab) => ({
       ...tab,
       el: tab.el,
     }));
@@ -4265,30 +4334,37 @@ function collectFrameWalkTexts() {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  async function mergeHarvestedStatsSubTabs(textBySubTab, subTabClicks, tab) {
+    if (!tab) return;
+    const tabRoot = findLiveStatsPanelRoot(tab) || findSidePanelRoot(tab);
+    const harvested = await collectStatsSubTabTexts(tabRoot, tab);
+    for (const [key, value] of Object.entries(harvested.textBySubTab)) {
+      if (value && !textBySubTab[key]) textBySubTab[key] = value;
+    }
+    for (const [key, clicked] of Object.entries(harvested.subTabClicks)) {
+      if (clicked) subTabClicks[key] = true;
+    }
+  }
+
   async function collectSidePanelTexts() {
     const textByTab = {};
     const tabClicks = {};
     const fullText = getAllVisibleText();
+    const textBySubTab = {};
+    const subTabClicks = {};
+    let statsSubTabsSkipped = null;
 
     const statsTab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS.stats);
     tabClicks.stats = Boolean(statsTab);
     if (statsTab) await delay(250);
 
     const statsRoot = findLiveStatsPanelRoot(statsTab) || findSidePanelRoot(statsTab);
-    const {
-      textBySubTab,
-      subTabClicks,
-      skipped: statsSubTabsSkipped,
-    } = await collectStatsSubTabTexts(statsRoot, statsTab);
-    textByTab.statsSubTabs = textBySubTab;
-    textByTab.statsSubTabClicks = subTabClicks;
-    textByTab.statsSubTabMerged = mergeStatsSubTabTexts(textBySubTab);
-    textByTab.statsSubTabCapture = summarizeStatsSubTabCapture(textBySubTab, subTabClicks);
+    const initialSubTabs = await collectStatsSubTabTexts(statsRoot, statsTab);
+    Object.assign(textBySubTab, initialSubTabs.textBySubTab);
+    Object.assign(subTabClicks, initialSubTabs.subTabClicks);
+    statsSubTabsSkipped = initialSubTabs.skipped;
 
-    const statsPanelText = [textByTab.statsSubTabMerged, getSidePanelText(statsTab)]
-      .filter(Boolean)
-      .join("\n---STATS-PANEL---\n");
-    textByTab.stats = mergeSidePanelTabText(statsPanelText, fullText, "stats");
+    textByTab.stats = mergeSidePanelTabText(getSidePanelText(statsTab), fullText, "stats");
 
     for (const key of SIDE_PANEL_TAB_KEYS) {
       if (key === "stats") continue;
@@ -4296,7 +4372,19 @@ function collectFrameWalkTexts() {
       tabClicks[key] = Boolean(tab);
       if (tab) await delay(250);
       textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
+      if (SIDE_PANEL_STATS_HARVEST_KEYS.includes(key)) {
+        await mergeHarvestedStatsSubTabs(textBySubTab, subTabClicks, tab);
+      }
     }
+
+    const ingested = ingestSidePanelTabStats(textByTab, textBySubTab, subTabClicks);
+    Object.assign(textBySubTab, ingested.textBySubTab);
+    Object.assign(subTabClicks, ingested.subTabClicks);
+
+    textByTab.statsSubTabs = textBySubTab;
+    textByTab.statsSubTabClicks = subTabClicks;
+    textByTab.statsSubTabMerged = mergeStatsSubTabTexts(textBySubTab);
+    textByTab.statsSubTabCapture = summarizeStatsSubTabCapture(textBySubTab, subTabClicks);
 
     return { textByTab, tabClicks, statsSubTabClicks: subTabClicks, statsSubTabsSkipped };
   }

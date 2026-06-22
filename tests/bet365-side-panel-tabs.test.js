@@ -22,6 +22,9 @@ describe("bet365 side panel tabs", () => {
     assert.equal(sidePanelTabKeyFromText("Cronologia"), "timeline");
     assert.equal(sidePanelTabKeyFromText("Escalação"), "lineup");
     assert.equal(sidePanelTabKeyFromText("Estatísticas de Jogador"), "playerStats");
+    assert.equal(sidePanelTabKeyFromText("Marcadores de Gols"), "goalScorers");
+    assert.equal(sidePanelTabKeyFromText("Marcadores de Gol"), "goalScorers");
+    assert.equal(sidePanelTabKeyFromText("Lateral"), "lateral");
     assert.equal(sidePanelTabKeyFromText("Popular"), null);
     assert.equal(sidePanelTabKeyFromText("Jogador a Marcar"), null);
   });

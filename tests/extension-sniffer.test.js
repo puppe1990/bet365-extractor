@@ -128,6 +128,8 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /EventViewDetailScroller/);
     assert.match(template, /scrollIntoView/);
     assert.match(template, /SIDE_PANEL_TAB_KEYS/);
+    assert.match(template, /SIDE_PANEL_STATS_HARVEST_KEYS/);
+    assert.match(template, /ingestSidePanelTabStats/);
     assert.match(template, /SIDE_PANEL_TAB_SCOPE_SELECTORS/);
     assert.match(template, /collectSidePanelTabElements/);
     assert.match(template, /getMarketTabsVisitList/);
