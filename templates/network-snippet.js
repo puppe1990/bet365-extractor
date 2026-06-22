@@ -5,7 +5,9 @@
     if (!entry) return;
     const keepRaw =
       typeof entry.data === "string" &&
-      (/\/Api\/1\/Blob\b/i.test(entry.url || "") || (entry.data.length || 0) > 4000);
+      (/\/Api\/1\/Blob\b/i.test(entry.url || "") ||
+        /sportspublisher\/zap/i.test(entry.url || "") ||
+        (entry.data.length || 0) > 4000);
     const normalized = keepRaw
       ? entry.data
       : typeof entry.data === "string"
