@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.24";
+const VERSION = "3.10.25";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -4780,6 +4780,10 @@ function defaultBallPosition(viewport, ballSize = EXTRACT_PLAYER_BALL_SIZE_PX) {
   );
 }
 
+function shouldAutoDownloadZipAfterExtract(options = {}) {
+  return options.autoDownloadZip !== false;
+}
+
 function summarizeExtractPreview(data = {}) {
   const m = data.match || {};
   const home = m.homeTeam || "?";
@@ -4856,6 +4860,7 @@ function serializePlayerState(state = {}) {
     y: state.y,
     intervalInput: state.intervalInput ?? "60",
     running: Boolean(state.running),
+    autoDownloadZip: shouldAutoDownloadZipAfterExtract(state),
   });
 }
 
@@ -4868,6 +4873,7 @@ function parsePlayerState(raw) {
       y: Number.isFinite(parsed.y) ? parsed.y : null,
       intervalInput: String(parsed.intervalInput || "60"),
       running: Boolean(parsed.running),
+      autoDownloadZip: shouldAutoDownloadZipAfterExtract(parsed),
     };
   } catch (_) {
     return null;
@@ -6754,6 +6760,7 @@ function collectFrameWalkTexts() {
   const ballSize = EXTRACT_PLAYER_BALL_SIZE_PX;
   const scheduler = createExtractPlayerScheduler();
   let lastData = null;
+  let autoDownloadZip = shouldAutoDownloadZipAfterExtract(options);
   let tabId = options.tabId ?? null;
   let drag = null;
   let tickTimer = null;
@@ -6905,6 +6912,7 @@ function collectFrameWalkTexts() {
           y: rect.top,
           intervalInput: intervalInput.value,
           running: scheduler.getState().running,
+          autoDownloadZip,
         })
       );
     } catch (_) {}
@@ -6948,6 +6956,9 @@ function collectFrameWalkTexts() {
         scheduler.setIntervalInput(intervalInput.value);
         scheduler.start(Date.now());
         syncToggleUi();
+      }
+      if (saved && "autoDownloadZip" in saved) {
+        autoDownloadZip = shouldAutoDownloadZipAfterExtract(saved);
       }
     } catch (_) {}
     scheduler.setIntervalInput(intervalInput.value);
@@ -7018,7 +7029,13 @@ function collectFrameWalkTexts() {
       const data = await buildDataFn(id);
       lastData = data;
       previewEl.textContent = summarizeExtractPreview(data);
-      statusEl.textContent = "OK";
+      if (shouldAutoDownloadZipAfterExtract({ autoDownloadZip })) {
+        statusEl.textContent = "ZIP…";
+        await downloadZip(data);
+        statusEl.textContent = "ZIP ok";
+      } else {
+        statusEl.textContent = "OK";
+      }
     } catch (err) {
       statusEl.textContent = String(err?.message || err).slice(0, 80);
     } finally {

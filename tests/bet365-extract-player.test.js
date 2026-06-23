@@ -9,6 +9,9 @@ import {
   summarizeExtractPreview,
   createExtractPlayerScheduler,
   defaultBallPosition,
+  shouldAutoDownloadZipAfterExtract,
+  serializePlayerState,
+  parsePlayerState,
 } from "../lib/bet365-extract-player.js";
 
 describe("parseIntervalInput", () => {
@@ -73,6 +76,39 @@ describe("summarizeExtractPreview", () => {
     assert.match(text, /66:12/);
     assert.match(text, /2 stats/);
     assert.match(text, /3 odds/);
+  });
+});
+
+describe("shouldAutoDownloadZipAfterExtract", () => {
+  it("ativa download automático por padrão", () => {
+    assert.equal(shouldAutoDownloadZipAfterExtract(), true);
+    assert.equal(shouldAutoDownloadZipAfterExtract({}), true);
+  });
+
+  it("permite desativar download automático", () => {
+    assert.equal(shouldAutoDownloadZipAfterExtract({ autoDownloadZip: false }), false);
+  });
+});
+
+describe("serializePlayerState / parsePlayerState", () => {
+  it("persiste autoDownloadZip ligado por padrão", () => {
+    const raw = serializePlayerState({ x: 10, y: 20, intervalInput: "90", running: true });
+    const parsed = parsePlayerState(raw);
+
+    assert.equal(parsed.autoDownloadZip, true);
+  });
+
+  it("restaura autoDownloadZip quando salvo", () => {
+    const raw = serializePlayerState({
+      x: 0,
+      y: 0,
+      intervalInput: "60",
+      running: false,
+      autoDownloadZip: false,
+    });
+    const parsed = parsePlayerState(raw);
+
+    assert.equal(parsed.autoDownloadZip, false);
   });
 });
 

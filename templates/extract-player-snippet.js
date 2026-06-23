@@ -8,6 +8,7 @@ function mountExtractPlayer(options = {}) {
   const ballSize = EXTRACT_PLAYER_BALL_SIZE_PX;
   const scheduler = createExtractPlayerScheduler();
   let lastData = null;
+  let autoDownloadZip = shouldAutoDownloadZipAfterExtract(options);
   let tabId = options.tabId ?? null;
   let drag = null;
   let tickTimer = null;
@@ -159,6 +160,7 @@ function mountExtractPlayer(options = {}) {
           y: rect.top,
           intervalInput: intervalInput.value,
           running: scheduler.getState().running,
+          autoDownloadZip,
         })
       );
     } catch (_) {}
@@ -202,6 +204,9 @@ function mountExtractPlayer(options = {}) {
         scheduler.setIntervalInput(intervalInput.value);
         scheduler.start(Date.now());
         syncToggleUi();
+      }
+      if (saved && "autoDownloadZip" in saved) {
+        autoDownloadZip = shouldAutoDownloadZipAfterExtract(saved);
       }
     } catch (_) {}
     scheduler.setIntervalInput(intervalInput.value);
@@ -272,7 +277,13 @@ function mountExtractPlayer(options = {}) {
       const data = await buildDataFn(id);
       lastData = data;
       previewEl.textContent = summarizeExtractPreview(data);
-      statusEl.textContent = "OK";
+      if (shouldAutoDownloadZipAfterExtract({ autoDownloadZip })) {
+        statusEl.textContent = "ZIP…";
+        await downloadZip(data);
+        statusEl.textContent = "ZIP ok";
+      } else {
+        statusEl.textContent = "OK";
+      }
     } catch (err) {
       statusEl.textContent = String(err?.message || err).slice(0, 80);
     } finally {

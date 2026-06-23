@@ -66,6 +66,7 @@ describe("build output", () => {
     assert.match(source, /extractStatsFromSubTabTexts/);
     assert.match(source, /mountExtractPlayer/);
     assert.match(source, /createExtractPlayerScheduler/);
+    assert.match(source, /shouldAutoDownloadZipAfterExtract/);
   });
 
   it("extension/dist/zip-utils.js expõe buildZipEntries", () => {
