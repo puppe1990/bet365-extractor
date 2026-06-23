@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.26";
+const VERSION = "3.10.27";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -4827,6 +4827,9 @@ function scoreSidePanelTabContent(text, key) {
 }
 
 const MIN_EXTRACT_PLAYER_INTERVAL_MS = 30_000;
+const MIN_PAGE_TEXT_FOR_EXTRACT = 3_000;
+const PAGE_READY_MARKET_RE =
+  /\b(?:Resultado Final|Partida\s*-\s*Gols|Escanteios\/Cartões|Chance Dupla|Marcadores de Gol)\b/i;
 const EXTRACT_PLAYER_STORAGE_KEY = "bet365-extract-player-state";
 const EXTRACT_PLAYER_BALL_SIZE_PX = 72;
 
@@ -4885,6 +4888,34 @@ function shouldAutoDownloadZipAfterExtract(options = {}) {
   return options.autoDownloadZip !== false;
 }
 
+function isPageTextReadyForExtract(visibleText = "") {
+  const text = String(visibleText || "");
+  if (text.length < MIN_PAGE_TEXT_FOR_EXTRACT) return false;
+  return PAGE_READY_MARKET_RE.test(text);
+}
+
+function isExtractDataReady(data = {}) {
+  const match = data.match || {};
+  const meta = data.meta || {};
+  const visibleTextLength = Number(meta.visibleTextLength || 0);
+  const hasTeams = Boolean(match.homeTeam && match.awayTeam);
+  const hasOdds = (data.odds || []).length > 0;
+  const hasStats = (data.stats || []).length > 0;
+  const hasEnoughText = visibleTextLength >= MIN_PAGE_TEXT_FOR_EXTRACT;
+
+  if (!hasEnoughText && !hasOdds && !hasStats) return false;
+  if (!hasTeams && !hasOdds && !hasStats) return false;
+  if (!hasTeams && visibleTextLength < MIN_PAGE_TEXT_FOR_EXTRACT) return false;
+  if (match.scoreConfidence === "low" && !hasOdds && !hasStats && !hasTeams) return false;
+
+  return true;
+}
+
+function shouldDownloadExtractZip(data = {}, options = {}) {
+  if (!shouldAutoDownloadZipAfterExtract(options)) return false;
+  return isExtractDataReady(data);
+}
+
 function summarizeExtractPreview(data = {}) {
   const m = data.match || {};
   const home = m.homeTeam || "?";
@@ -4922,10 +4953,11 @@ function createExtractPlayerScheduler(options = {}) {
     getIntervalMs() {
       return intervalMs;
     },
-    start(now) {
+    start(now, options = {}) {
       running = true;
       extracting = false;
-      nextRunAt = now;
+      const delayMs = Math.max(0, Number(options.firstRunDelayMs || 0));
+      nextRunAt = now + delayMs;
       return this.getState();
     },
     stop() {
@@ -6871,6 +6903,10 @@ function collectFrameWalkTexts() {
   let tabId = options.tabId ?? null;
   let drag = null;
   let tickTimer = null;
+  const getPageVisibleText = options.getPageVisibleText || (() => document.body?.innerText || "");
+  const isPageReady =
+    options.isPageReady || (() => isPageTextReadyForExtract(getPageVisibleText()));
+  const RESTORE_FIRST_RUN_DELAY_MS = 8_000;
 
   const root = document.createElement("div");
   root.id = "bet365-extract-player-root";
@@ -7061,7 +7097,7 @@ function collectFrameWalkTexts() {
       }
       if (saved?.running) {
         scheduler.setIntervalInput(intervalInput.value);
-        scheduler.start(Date.now());
+        scheduler.start(Date.now(), { firstRunDelayMs: RESTORE_FIRST_RUN_DELAY_MS });
         syncToggleUi();
       }
       if (saved && "autoDownloadZip" in saved) {
@@ -7086,7 +7122,9 @@ function collectFrameWalkTexts() {
       countdownEl.textContent = "Próxima: —";
       return tick;
     }
-    if (tick.action === "extract") {
+    if (tick.action === "extract" && !isPageReady()) {
+      countdownEl.textContent = "Próxima: aguardando página";
+    } else if (tick.action === "extract") {
       countdownEl.textContent = "Próxima: agora";
     } else if (tick.countdownMs != null) {
       countdownEl.textContent = `Próxima: ${formatPlayerCountdown(tick.countdownMs)}`;
@@ -7128,15 +7166,23 @@ function collectFrameWalkTexts() {
 
   async function runExtract() {
     if (scheduler.getState().extracting) return;
+    if (!isPageReady()) {
+      statusEl.textContent = "Aguardando jogo…";
+      return;
+    }
     scheduler.markExtractStart(Date.now());
     syncToggleUi();
     statusEl.textContent = "Extraindo…";
     try {
       const id = await resolveTabId();
       const data = await buildDataFn(id);
-      lastData = data;
       previewEl.textContent = summarizeExtractPreview(data);
-      if (shouldAutoDownloadZipAfterExtract({ autoDownloadZip })) {
+      if (!isExtractDataReady(data)) {
+        statusEl.textContent = "Aguardando dados…";
+        return;
+      }
+      lastData = data;
+      if (shouldDownloadExtractZip(data, { autoDownloadZip })) {
         statusEl.textContent = "ZIP…";
         await downloadZip(data);
         statusEl.textContent = "ZIP ok";
@@ -7155,6 +7201,9 @@ function collectFrameWalkTexts() {
   async function onTick() {
     const tick = updateCountdown();
     if (tick.action === "extract") await runExtract();
+    else if (scheduler.getState().running && !isPageReady()) {
+      statusEl.textContent = "Aguardando jogo…";
+    }
   }
 
   ball.addEventListener("pointerdown", (ev) => {

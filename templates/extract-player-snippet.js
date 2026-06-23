@@ -12,6 +12,10 @@ function mountExtractPlayer(options = {}) {
   let tabId = options.tabId ?? null;
   let drag = null;
   let tickTimer = null;
+  const getPageVisibleText = options.getPageVisibleText || (() => document.body?.innerText || "");
+  const isPageReady =
+    options.isPageReady || (() => isPageTextReadyForExtract(getPageVisibleText()));
+  const RESTORE_FIRST_RUN_DELAY_MS = 8_000;
 
   const root = document.createElement("div");
   root.id = "bet365-extract-player-root";
@@ -202,7 +206,7 @@ function mountExtractPlayer(options = {}) {
       }
       if (saved?.running) {
         scheduler.setIntervalInput(intervalInput.value);
-        scheduler.start(Date.now());
+        scheduler.start(Date.now(), { firstRunDelayMs: RESTORE_FIRST_RUN_DELAY_MS });
         syncToggleUi();
       }
       if (saved && "autoDownloadZip" in saved) {
@@ -227,7 +231,9 @@ function mountExtractPlayer(options = {}) {
       countdownEl.textContent = "Próxima: —";
       return tick;
     }
-    if (tick.action === "extract") {
+    if (tick.action === "extract" && !isPageReady()) {
+      countdownEl.textContent = "Próxima: aguardando página";
+    } else if (tick.action === "extract") {
       countdownEl.textContent = "Próxima: agora";
     } else if (tick.countdownMs != null) {
       countdownEl.textContent = `Próxima: ${formatPlayerCountdown(tick.countdownMs)}`;
@@ -269,15 +275,23 @@ function mountExtractPlayer(options = {}) {
 
   async function runExtract() {
     if (scheduler.getState().extracting) return;
+    if (!isPageReady()) {
+      statusEl.textContent = "Aguardando jogo…";
+      return;
+    }
     scheduler.markExtractStart(Date.now());
     syncToggleUi();
     statusEl.textContent = "Extraindo…";
     try {
       const id = await resolveTabId();
       const data = await buildDataFn(id);
-      lastData = data;
       previewEl.textContent = summarizeExtractPreview(data);
-      if (shouldAutoDownloadZipAfterExtract({ autoDownloadZip })) {
+      if (!isExtractDataReady(data)) {
+        statusEl.textContent = "Aguardando dados…";
+        return;
+      }
+      lastData = data;
+      if (shouldDownloadExtractZip(data, { autoDownloadZip })) {
         statusEl.textContent = "ZIP…";
         await downloadZip(data);
         statusEl.textContent = "ZIP ok";
@@ -296,6 +310,9 @@ function mountExtractPlayer(options = {}) {
   async function onTick() {
     const tick = updateCountdown();
     if (tick.action === "extract") await runExtract();
+    else if (scheduler.getState().running && !isPageReady()) {
+      statusEl.textContent = "Aguardando jogo…";
+    }
   }
 
   ball.addEventListener("pointerdown", (ev) => {

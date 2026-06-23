@@ -10,8 +10,12 @@ import {
   createExtractPlayerScheduler,
   defaultBallPosition,
   shouldAutoDownloadZipAfterExtract,
+  shouldDownloadExtractZip,
+  isPageTextReadyForExtract,
+  isExtractDataReady,
   serializePlayerState,
   parsePlayerState,
+  MIN_PAGE_TEXT_FOR_EXTRACT,
 } from "../lib/bet365-extract-player.js";
 
 describe("parseIntervalInput", () => {
@@ -79,6 +83,72 @@ describe("summarizeExtractPreview", () => {
   });
 });
 
+describe("isPageTextReadyForExtract", () => {
+  it("rejeita página com pouco texto", () => {
+    assert.equal(isPageTextReadyForExtract("Noruega v Senegal"), false);
+  });
+
+  it("aceita página com mercados visíveis", () => {
+    const text = `${"x".repeat(MIN_PAGE_TEXT_FOR_EXTRACT)} Noruega v Senegal Resultado Final`;
+    assert.equal(isPageTextReadyForExtract(text), true);
+  });
+});
+
+describe("isExtractDataReady", () => {
+  it("rejeita extract vazio antes do jogo carregar", () => {
+    const ready = isExtractDataReady({
+      match: { scoreConfidence: "low" },
+      meta: { visibleTextLength: 1505 },
+      odds: [],
+      stats: [],
+    });
+    assert.equal(ready, false);
+  });
+
+  it("aceita extract com times e odds", () => {
+    const ready = isExtractDataReady({
+      match: { homeTeam: "Noruega", awayTeam: "Senegal", scoreConfidence: "high" },
+      meta: { visibleTextLength: 120_000 },
+      odds: [{ market: "Resultado Final" }],
+      stats: [],
+    });
+    assert.equal(ready, true);
+  });
+});
+
+describe("shouldDownloadExtractZip", () => {
+  it("não baixa ZIP quando dados ainda não carregaram", () => {
+    const ok = shouldDownloadExtractZip(
+      {
+        match: { scoreConfidence: "low" },
+        meta: { visibleTextLength: 1505 },
+        odds: [],
+        stats: [],
+      },
+      { autoDownloadZip: true }
+    );
+    assert.equal(ok, false);
+  });
+
+  it("baixa ZIP quando extract está pronto e auto-download ligado", () => {
+    const ok = shouldDownloadExtractZip(
+      {
+        match: {
+          homeTeam: "Noruega",
+          awayTeam: "Senegal",
+          score: "3-1",
+          scoreConfidence: "high",
+        },
+        meta: { visibleTextLength: 118_000 },
+        odds: [{ market: "Resultado Final" }],
+        stats: [{ label: "xG" }],
+      },
+      { autoDownloadZip: true }
+    );
+    assert.equal(ok, true);
+  });
+});
+
 describe("shouldAutoDownloadZipAfterExtract", () => {
   it("ativa download automático por padrão", () => {
     assert.equal(shouldAutoDownloadZipAfterExtract(), true);
@@ -120,6 +190,15 @@ describe("createExtractPlayerScheduler", () => {
 
     const tick = scheduler.tick(1_000);
     assert.equal(tick.action, "extract");
+  });
+
+  it("atrasa primeira extração quando pedido", () => {
+    const scheduler = createExtractPlayerScheduler();
+    scheduler.setIntervalInput("60");
+    scheduler.start(0, { firstRunDelayMs: 5_000 });
+
+    assert.equal(scheduler.tick(4_999).action, "wait");
+    assert.equal(scheduler.tick(5_000).action, "extract");
   });
 
   it("agenda próxima extração após concluir uma", () => {
