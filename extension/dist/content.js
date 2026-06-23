@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.25";
+const VERSION = "3.10.26";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -1153,6 +1153,11 @@ function isLineValue(s) {
   return /^[+-]?\d+([.,]\d+)?$/.test(s);
 }
 
+function isTotalsLineValue(s) {
+  const n = String(s || "").replace(",", ".");
+  return /^[+-]?\d+(\.5)$/.test(n) || /^[+-]?\d{1,2}$/.test(n);
+}
+
 function isValidOdd(n) {
   return n >= 1.01 && n <= 501;
 }
@@ -1168,10 +1173,22 @@ function isSkippedOddsLine(line) {
   return !line || SKIP_ODDS_LINES.test(line);
 }
 
+function isCornerBettingMarket(market) {
+  const s = normalize(market);
+  if (!s) return false;
+  if (/^Escanteios(?:\s*-\s*.+)?$/i.test(s)) return true;
+  if (/^Mais Escanteios$/i.test(s)) return true;
+  if (/^Número de Cartões$/i.test(s)) return true;
+  if (/^Cartões\s*-/i.test(s)) return true;
+  return false;
+}
+
 function isStatLabel(text) {
   const n = normalize(text);
   if (!n) return false;
-  if (STAT_LABELS.some((label) => n === label || n.includes(label))) return true;
+  if (isCornerBettingMarket(n)) return false;
+  if (STAT_LABELS.some((label) => n === label)) return true;
+  if (STAT_LABELS.some((label) => label.includes(" ") && n.includes(label))) return true;
   return STAT_LABEL_RE.test(n);
 }
 
@@ -1236,6 +1253,7 @@ function isJunkOddsMarket(market) {
   if (market.length > 55) return true;
   if (JUNK_ODDS_MARKETS.test(market)) return true;
   if (LEGAL_FOOTER_MARKET_RE.test(market)) return true;
+  if (isCornerBettingMarket(market)) return false;
   if (isStatLabel(market)) return true;
   if (isTimelineLeakMarket(market)) return true;
   return false;
@@ -1355,6 +1373,7 @@ function isJunkOddsSelection(selection) {
 function isLikelyBettingMarket(market) {
   if (isJunkOddsMarket(market)) return false;
   if (isTimelineLeakMarket(market)) return false;
+  if (isCornerBettingMarket(market)) return true;
   if (/^(Empate|Sim|Não|Nenhum)$/i.test(market)) return false;
   if (market.includes(" - ")) return true;
   if (/\s/.test(market)) return BETTING_MARKET_HINTS.test(market);
@@ -1372,9 +1391,22 @@ function isLikelyShirtNumberPair(selection, oddRaw, lines, oddIndex) {
   );
 }
 
+function isHandicapSelectionLine(line, lines, index) {
+  if (!/[+-]\d/.test(line)) return false;
+  let j = index + 1;
+  while (j < lines.length && isSkippedOddsLine(lines[j])) j++;
+  return j < lines.length && isValidOdd(parseOdd(lines[j]));
+}
+
+function isCornerBettingSubMarket(line) {
+  const s = normalize(line);
+  return /^\d+[º°]\s*Escanteio$/i.test(s) || /^Último$/i.test(s);
+}
+
 function isLikelyMarketHeader(line, lines, index) {
   if (isSkippedOddsLine(line)) return false;
   if (isTimelineLeakMarket(line)) return false;
+  if (isHandicapSelectionLine(line, lines, index)) return false;
   if (isLineValue(line)) return false;
   if (isValidOdd(parseOdd(line))) return false;
   if (line.length < 4) return false;
@@ -1401,6 +1433,9 @@ function parseOddsFromVisibleText(text) {
   let playerNames = [];
   let playerGridColumns = [];
   let inPlayerGrid = false;
+  let inCornerGroup = false;
+  let cornerSubMarket = null;
+  let lastTotalsLine = null;
 
   function pushOdd(entry) {
     const { market: mkt, selection, odds: odd } = entry;
@@ -1425,10 +1460,29 @@ function parseOddsFromVisibleText(text) {
     playerNames = [];
     playerGridColumns = [];
     inPlayerGrid = false;
+    inCornerGroup = false;
+    cornerSubMarket = null;
+    lastTotalsLine = null;
   }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    if (/^Escanteios$/i.test(line)) {
+      let j = i + 1;
+      while (j < lines.length && isSkippedOddsLine(lines[j])) j++;
+      if (j < lines.length && isCornerBettingSubMarket(lines[j])) {
+        market = line;
+        resetMarketContext();
+        inCornerGroup = true;
+        continue;
+      }
+    }
+
+    if (inCornerGroup && isCornerBettingSubMarket(line)) {
+      cornerSubMarket = line;
+      continue;
+    }
 
     if (
       (/^Jogador\s*-/i.test(line) && line.includes(" - ")) ||
@@ -1437,6 +1491,19 @@ function parseOddsFromVisibleText(text) {
       market = line;
       resetMarketContext();
       continue;
+    }
+
+    if (inCornerGroup && cornerSubMarket && isValidSelection(line)) {
+      const odd = parseOdd(lines[i + 1]);
+      if (isValidOdd(odd)) {
+        pushOdd({
+          market: `Escanteios - ${cornerSubMarket}`,
+          selection: line,
+          odds: odd,
+        });
+        i++;
+        continue;
+      }
     }
 
     if (/^Marcadores/i.test(market)) {
@@ -1489,6 +1556,35 @@ function parseOddsFromVisibleText(text) {
 
     if (/^(Mais de|Menos de)$/i.test(line) && !isPlayerPropMarket(market)) {
       const direction = line;
+      const lineAfter = lines[i + 1];
+      const oddAfterLine = parseOdd(lines[i + 2]);
+      if (isTotalsLineValue(lineAfter) && isValidOdd(oddAfterLine)) {
+        pushOdd({
+          market,
+          selection: `${direction} ${lineAfter}`,
+          odds: oddAfterLine,
+        });
+        lastTotalsLine = lineAfter;
+        pendingLines = [lineAfter];
+        i += 2;
+        continue;
+      }
+      if (
+        /^Menos de$/i.test(direction) &&
+        pendingLines.length <= 1 &&
+        isValidOdd(parseOdd(lines[i + 1])) &&
+        (lastTotalsLine || pendingLines[0])
+      ) {
+        const lineVal = lastTotalsLine || pendingLines[0];
+        pushOdd({
+          market,
+          selection: `Menos de ${lineVal}`,
+          odds: parseOdd(lines[i + 1]),
+        });
+        i++;
+        pendingLines = [];
+        continue;
+      }
       if (pendingLines.length > 1) {
         let j = i + 1;
         let col = 0;
@@ -1509,6 +1605,7 @@ function parseOddsFromVisibleText(text) {
         const lineVal = pendingLines[0];
         const selection = lineVal ? `${direction} ${lineVal}` : direction;
         pushOdd({ market, selection, odds: odd });
+        if (lineVal) lastTotalsLine = lineVal;
         i++;
       }
       if (/^Menos de$/i.test(direction)) {
@@ -2352,6 +2449,10 @@ function collectMarketTabCandidates(
 
 function isPlayerMarketTabKey(key) {
   return key === "Jogador" || key === "Jogador a Marcar";
+}
+
+function isCornerMarketTabKey(key) {
+  return key === "Escanteios/Cartões";
 }
 
 const STATS_SUB_TAB_KEYS = [
@@ -6064,7 +6165,11 @@ function collectFrameWalkTexts() {
   async function scrollPlayerPropGrids(capture, startedAt) {
     const headers = queryDeep(
       "[class*='MarketGroupButton_Text'], [class*='Market__label'], [class*='MarketGroup'][class*='Text']"
-    ).filter((el) => /Jogador\s*-|Jogador\/Contagem/i.test(normalize(el.textContent)));
+    ).filter((el) =>
+      /Jogador\s*-|Jogador\/Contagem|Escanteios|Cart[oõ]es|Número de Cartões/i.test(
+        normalize(el.textContent)
+      )
+    );
 
     for (const header of headers.slice(0, 8)) {
       if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) break;
@@ -6114,7 +6219,7 @@ function collectFrameWalkTexts() {
         visited.push(key);
         await delay(MARKET_TAB_CLICK_DELAY_MS);
         capture();
-        if (isPlayerMarketTabKey(key)) {
+        if (isPlayerMarketTabKey(key) || isCornerMarketTabKey(key)) {
           await scrollPlayerPropGrids(capture, startedAt);
         }
       } catch (_) {}
@@ -6174,7 +6279,9 @@ function collectFrameWalkTexts() {
     const marketHeaders = queryDeep(
       "[class*='MarketGroupButton_Text'], [class*='Market__label'], [class*='MarketGroup'][class*='Text']"
     ).filter((el) =>
-      /Jogador\s*-|Jogador\/Contagem|Encontro\s*-|Faltas|Assist/i.test(normalize(el.textContent))
+      /Jogador\s*-|Jogador\/Contagem|Encontro\s*-|Faltas|Assist|Escanteios|Cart[oõ]es|Número de Cartões/i.test(
+        normalize(el.textContent)
+      )
     );
 
     for (const header of marketHeaders.slice(0, 18)) {

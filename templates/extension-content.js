@@ -1002,7 +1002,11 @@
   async function scrollPlayerPropGrids(capture, startedAt) {
     const headers = queryDeep(
       "[class*='MarketGroupButton_Text'], [class*='Market__label'], [class*='MarketGroup'][class*='Text']"
-    ).filter((el) => /Jogador\s*-|Jogador\/Contagem/i.test(normalize(el.textContent)));
+    ).filter((el) =>
+      /Jogador\s*-|Jogador\/Contagem|Escanteios|Cart[oõ]es|Número de Cartões/i.test(
+        normalize(el.textContent)
+      )
+    );
 
     for (const header of headers.slice(0, 8)) {
       if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) break;
@@ -1052,7 +1056,7 @@
         visited.push(key);
         await delay(MARKET_TAB_CLICK_DELAY_MS);
         capture();
-        if (isPlayerMarketTabKey(key)) {
+        if (isPlayerMarketTabKey(key) || isCornerMarketTabKey(key)) {
           await scrollPlayerPropGrids(capture, startedAt);
         }
       } catch (_) {}
@@ -1112,7 +1116,9 @@
     const marketHeaders = queryDeep(
       "[class*='MarketGroupButton_Text'], [class*='Market__label'], [class*='MarketGroup'][class*='Text']"
     ).filter((el) =>
-      /Jogador\s*-|Jogador\/Contagem|Encontro\s*-|Faltas|Assist/i.test(normalize(el.textContent))
+      /Jogador\s*-|Jogador\/Contagem|Encontro\s*-|Faltas|Assist|Escanteios|Cart[oõ]es|Número de Cartões/i.test(
+        normalize(el.textContent)
+      )
     );
 
     for (const header of marketHeaders.slice(0, 18)) {

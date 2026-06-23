@@ -13,6 +13,7 @@ import {
   isMarketCategoryTabLabel,
   isMarketTabLeafText,
   isPlayerMarketTabKey,
+  isCornerMarketTabKey,
   leafMarketTabKey,
   marketCategoryTabKey,
   marketTabsVisitList,
@@ -72,6 +73,11 @@ describe("bet365 market category tabs", () => {
       MARKET_CATEGORY_TABS_VISIT
     );
     assert.ok(isPlayerMarketTabKey("Jogador a Marcar"));
+  });
+
+  it("identifica aba de escanteios para scroll dedicado", () => {
+    assert.equal(isCornerMarketTabKey("Escanteios/Cartões"), true);
+    assert.equal(isCornerMarketTabKey("Gols"), false);
   });
 
   it("detecta container colado com várias abas", () => {

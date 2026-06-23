@@ -67,6 +67,7 @@ describe("build output", () => {
     assert.match(source, /mountExtractPlayer/);
     assert.match(source, /createExtractPlayerScheduler/);
     assert.match(source, /shouldAutoDownloadZipAfterExtract/);
+    assert.match(source, /isCornerMarketTabKey/);
   });
 
   it("extension/dist/zip-utils.js expõe buildZipEntries", () => {

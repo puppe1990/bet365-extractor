@@ -242,6 +242,10 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     return key === "Jogador" || key === "Jogador a Marcar";
   }
 
+  function isCornerMarketTabKey(key) {
+    return key === "Escanteios/Cartões";
+  }
+
   const norm = (t) => (t || "").replace(/\s+/g, " ").trim();
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -485,7 +489,11 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
   async function scrollPlayerPropGrids(capture, startedAt) {
     const headers = queryDeep(
       "[class*='MarketGroupButton_Text'], [class*='Market__label'], [class*='MarketGroup'][class*='Text']"
-    ).filter((el) => /Jogador\s*-|Jogador\/Contagem/i.test(norm(el.textContent)));
+    ).filter((el) =>
+      /Jogador\s*-|Jogador\/Contagem|Escanteios|Cart[oõ]es|Número de Cartões/i.test(
+        norm(el.textContent)
+      )
+    );
 
     for (const header of headers.slice(0, 8)) {
       if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) break;
@@ -539,7 +547,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
         visited.push(key);
         await delay(MARKET_TAB_CLICK_DELAY_MS);
         capture();
-        if (isPlayerMarketTabKey(key)) {
+        if (isPlayerMarketTabKey(key) || isCornerMarketTabKey(key)) {
           await scrollPlayerPropGrids(capture, startedAt);
         }
       } catch (_) {}
@@ -624,7 +632,9 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
   const marketHeaders = queryDeep(
     "[class*='MarketGroupButton_Text'], [class*='Market__label'], [class*='MarketGroup'][class*='Text']"
   ).filter((el) =>
-    /Jogador\s*-|Jogador\/Contagem|Encontro\s*-|Faltas|Assist/i.test(norm(el.textContent))
+    /Jogador\s*-|Jogador\/Contagem|Encontro\s*-|Faltas|Assist|Escanteios|Cart[oõ]es|Número de Cartões/i.test(
+      norm(el.textContent)
+    )
   );
 
   for (const header of marketHeaders.slice(0, 18)) {

@@ -24,6 +24,7 @@ import {
   sanitizeMatchClock,
   isLikelyBettingMarket,
   isJunkOddsMarket,
+  isCornerBettingMarket,
   isJunkOddsSelection,
   isTimelineLeakMarket,
   isTimelineLeakSelection,
@@ -59,6 +60,7 @@ const CRONOLOGIA_ODDS_LEAK_FIXTURE = readFileSync(
   join(__dir, "fixtures/cronologia-odds-leak.txt"),
   "utf8"
 );
+const CORNER_ODDS_FIXTURE = readFileSync(join(__dir, "fixtures/corner-odds-inplay.txt"), "utf8");
 const INTERVAL_ODDS_LEAK_FIXTURE = readFileSync(
   join(__dir, "fixtures/interval-odds-leak.txt"),
   "utf8"
@@ -461,6 +463,27 @@ describe("parseOddsFromVisibleText", () => {
     assert.ok(odds.every((o) => o.source === "visible-text"));
   });
 
+  it("extrai mercados de escanteios da aba Escanteios/Cartões", () => {
+    const odds = parseOddsFromVisibleText(CORNER_ODDS_FIXTURE);
+    const byKey = Object.fromEntries(odds.map((o) => [`${o.market}|${o.selection}`, o]));
+
+    assert.equal(byKey["Escanteios - 2 Opções|Mais de 7.5"].odds, 1.57);
+    assert.equal(byKey["Escanteios - 2 Opções|Menos de 7.5"].odds, 2.25);
+    assert.equal(byKey["Escanteios - Handicap|Noruega -2"].odds, 3.2);
+    assert.equal(byKey["Escanteios - Handicap|Empate - Senegal +2"].odds, 3.2);
+    assert.equal(byKey["Escanteios - Handicap|Senegal +2"].odds, 2.05);
+    assert.equal(byKey["Mais Escanteios|Noruega"].odds, 1.22);
+    assert.equal(byKey["Mais Escanteios|Empate"].odds, 6);
+    assert.equal(byKey["Mais Escanteios|Senegal"].odds, 8);
+    assert.equal(byKey["Escanteios - 8º Escanteio|Noruega"].odds, 2.25);
+    assert.equal(byKey["Escanteios - 8º Escanteio|Senegal"].odds, 1.57);
+    assert.equal(byKey["Escanteios - Último|Noruega"].odds, 2.62);
+    assert.equal(byKey["Escanteios - Último|Senegal"].odds, 1.44);
+    assert.equal(byKey["Número de Cartões|Mais de 3.5"].odds, 1.9);
+    assert.equal(byKey["Número de Cartões|Menos de 3.5"].odds, 1.9);
+    assert.ok(!odds.some((o) => o.market === "Empate - Senegal +2"));
+  });
+
   it("associa mercados e linhas de gols do texto visível ao vivo", () => {
     const odds = parseOddsFromVisibleText(INPLAY_ODDS_FIXTURE);
     const byKey = Object.fromEntries(odds.map((o) => [`${o.market}|${o.selection}`, o]));
@@ -484,7 +507,26 @@ describe("isLikelyBettingMarket", () => {
   });
 });
 
+describe("isCornerBettingMarket", () => {
+  it("aceita mercados de escanteios e cartões", () => {
+    assert.equal(isCornerBettingMarket("Escanteios - 2 Opções"), true);
+    assert.equal(isCornerBettingMarket("Escanteios - Handicap"), true);
+    assert.equal(isCornerBettingMarket("Mais Escanteios"), true);
+    assert.equal(isCornerBettingMarket("Escanteios - 8º Escanteio"), true);
+    assert.equal(isCornerBettingMarket("Número de Cartões"), true);
+    assert.equal(isCornerBettingMarket("Partida - Gols"), false);
+    assert.equal(isCornerBettingMarket("Goleiro - Defesas"), false);
+  });
+});
+
 describe("isJunkOddsMarket", () => {
+  it("não rejeita mercados de escanteios como stat label", () => {
+    assert.equal(isJunkOddsMarket("Escanteios - 2 Opções"), false);
+    assert.equal(isJunkOddsMarket("Mais Escanteios"), false);
+    assert.equal(isJunkOddsMarket("Escanteios - Handicap"), false);
+    assert.equal(isJunkOddsMarket("Número de Cartões"), false);
+  });
+
   it("rejeita rodapé legal, stats e botões de UI", () => {
     assert.equal(
       isJunkOddsMarket(
