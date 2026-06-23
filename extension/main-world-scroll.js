@@ -3,6 +3,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     "Popular",
     "Instantâneas",
     "Escanteios/Cartões",
+    "Escanteios",
     "Gols",
     "1º Tempo/2º Tempo",
     "Jogador",
@@ -27,8 +28,9 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
 
   const PREMATCH_MARKET_TABS_VISIT = [
     "Popular",
-    "Jogador a Marcar",
+    "Escanteios",
     "Gols",
+    "Jogador a Marcar",
     "Handicap",
     "Odds Asiáticas",
   ];
@@ -133,8 +135,16 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
   function gluedMarketTabCount(text) {
     const s = normalizeMarketTabLabel(text);
     if (!s) return 0;
-    return MARKET_CATEGORY_TABS.filter((label) => new RegExp(escapeRegExp(label), "i").test(s))
-      .length;
+    let remaining = s;
+    let count = 0;
+    const tabs = [...MARKET_CATEGORY_TABS].sort((a, b) => b.length - a.length);
+    for (const label of tabs) {
+      const re = new RegExp(escapeRegExp(label), "i");
+      if (!re.test(remaining)) continue;
+      count++;
+      remaining = remaining.replace(re, " ");
+    }
+    return count;
   }
 
   function isGluedMarketTabContainer(text) {
@@ -153,6 +163,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     if (/Gols/i.test(text)) score += 1;
     if (/Instant/i.test(text)) score += 1;
     if (/Escanteios\/Cartões/i.test(text)) score += 2;
+    if (/\bEscanteios\b/i.test(text)) score += 2;
     if (/\bTodos\b/i.test(text)) score += 2;
     if (/Criar Aposta/i.test(text)) score += 1;
     return score;
@@ -243,7 +254,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
   }
 
   function isCornerMarketTabKey(key) {
-    return key === "Escanteios/Cartões";
+    return key === "Escanteios/Cartões" || key === "Escanteios";
   }
 
   const norm = (t) => (t || "").replace(/\s+/g, " ").trim();

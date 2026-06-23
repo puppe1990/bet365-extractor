@@ -61,6 +61,10 @@ const CRONOLOGIA_ODDS_LEAK_FIXTURE = readFileSync(
   "utf8"
 );
 const CORNER_ODDS_FIXTURE = readFileSync(join(__dir, "fixtures/corner-odds-inplay.txt"), "utf8");
+const CORNER_ODDS_PREMATCH_FIXTURE = readFileSync(
+  join(__dir, "fixtures/corner-odds-prematch.txt"),
+  "utf8"
+);
 const INTERVAL_ODDS_LEAK_FIXTURE = readFileSync(
   join(__dir, "fixtures/interval-odds-leak.txt"),
   "utf8"
@@ -482,6 +486,23 @@ describe("parseOddsFromVisibleText", () => {
     assert.equal(byKey["Número de Cartões|Mais de 3.5"].odds, 1.9);
     assert.equal(byKey["Número de Cartões|Menos de 3.5"].odds, 1.9);
     assert.ok(!odds.some((o) => o.market === "Empate - Senegal +2"));
+  });
+
+  it("extrai grade pré-jogo de escanteios com Exatamente e faixas", () => {
+    const odds = parseOddsFromVisibleText(CORNER_ODDS_PREMATCH_FIXTURE);
+    const byKey = Object.fromEntries(odds.map((o) => [`${o.market}|${o.selection}`, o]));
+
+    assert.equal(byKey["Escanteios|Mais de 9"].odds, 2.37);
+    assert.equal(byKey["Escanteios|Exatamente 9"].odds, 7.5);
+    assert.equal(byKey["Escanteios|Menos de 9"].odds, 1.83);
+    assert.equal(byKey["Escanteios - Alternativas|Mais de 4"].odds, 1.05);
+    assert.equal(byKey["Escanteios - Alternativas|Exatamente 5"].odds, 11);
+    assert.equal(byKey["Total de Escanteios|Menos de 6"].odds, 6);
+    assert.equal(byKey["Total de Escanteios|6 - 8"].odds, 2.6);
+    assert.equal(byKey["Total de Escanteios|9 - 11"].odds, 2.75);
+    assert.equal(byKey["Total de Escanteios|Mais de 14"].odds, 17);
+    assert.equal(byKey["1º Tempo - Escanteios|Mais de 3.5"].odds, 2.2);
+    assert.ok(odds.filter((o) => /Escanteio/i.test(o.market)).length >= 15);
   });
 
   it("associa mercados e linhas de gols do texto visível ao vivo", () => {

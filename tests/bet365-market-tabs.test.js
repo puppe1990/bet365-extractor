@@ -47,7 +47,7 @@ describe("bet365 market category tabs", () => {
 
   it("normaliza espaços no rótulo", () => {
     assert.equal(normalizeMarketTabLabel("  Jogador \n"), "Jogador");
-    assert.equal(MARKET_CATEGORY_TABS.length, 14);
+    assert.equal(MARKET_CATEGORY_TABS.length, 15);
     assert.ok(isMarketCategoryTabLabel("Todos"));
     assert.ok(MARKET_CATEGORY_TABS_VISIT.includes("Todos"));
     assert.ok(MARKET_CATEGORY_TABS_VISIT.includes("Jogador"));
@@ -60,6 +60,8 @@ describe("bet365 market category tabs", () => {
       assert.equal(marketCategoryTabKey(tab), tab);
     }
     assert.ok(PREMATCH_MARKET_TABS_VISIT.includes("Jogador a Marcar"));
+    assert.ok(PREMATCH_MARKET_TABS_VISIT.includes("Escanteios"));
+    assert.ok(isMarketCategoryTabLabel("Escanteios"));
     assert.equal(
       marketTabsVisitList(
         resolveMarketTabPageMode("https://www.bet365.bet.br/#/AC/B1/C1/D8/E194699812/")
@@ -77,6 +79,7 @@ describe("bet365 market category tabs", () => {
 
   it("identifica aba de escanteios para scroll dedicado", () => {
     assert.equal(isCornerMarketTabKey("Escanteios/Cartões"), true);
+    assert.equal(isCornerMarketTabKey("Escanteios"), true);
     assert.equal(isCornerMarketTabKey("Gols"), false);
   });
 

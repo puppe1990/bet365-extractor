@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.28";
+const VERSION = "3.10.29";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -1178,9 +1178,24 @@ function isCornerBettingMarket(market) {
   if (!s) return false;
   if (/^Escanteios(?:\s*-\s*.+)?$/i.test(s)) return true;
   if (/^Mais Escanteios$/i.test(s)) return true;
+  if (/^Total de Escanteios$/i.test(s)) return true;
+  if (/^\d+[º°]\s*Tempo\s*-\s*Escanteios$/i.test(s)) return true;
   if (/^Número de Cartões$/i.test(s)) return true;
   if (/^Cartões\s*-/i.test(s)) return true;
   return false;
+}
+
+function isCornerTotalRangeSelection(selection, market) {
+  const sel = normalize(selection);
+  const mkt = normalize(market);
+  if (!isCornerBettingMarket(mkt)) return false;
+  if (/^\d+\s*-\s*\d+$/.test(sel)) return true;
+  if (/^(Mais de|Menos de|Exatamente)\s+\d/.test(sel)) return true;
+  return false;
+}
+
+function isTotalsDirectionLine(line) {
+  return /^(Mais de|Menos de|Exatamente)$/i.test(normalize(line));
 }
 
 function isStatLabel(text) {
@@ -1192,10 +1207,15 @@ function isStatLabel(text) {
   return STAT_LABEL_RE.test(n);
 }
 
-function isValidTotalsLine(value) {
+function isValidTotalsLine(value, options = {}) {
   if (!isLineValue(value)) return false;
-  const n = parseFloat(String(value).replace(",", "."));
-  return Number.isFinite(n) && n >= 0 && n <= 7.5;
+  const raw = String(value).trim();
+  const n = parseFloat(raw.replace(",", "."));
+  if (!Number.isFinite(n) || n < 0) return false;
+  if (/^\d+$/.test(raw)) {
+    return n <= (options.maxIntegerLine ?? 20);
+  }
+  return n <= (options.maxLine ?? 7.5);
 }
 
 function isTimelineLeakMarket(market) {
@@ -1239,6 +1259,7 @@ function isLikelyStatCountAsOdd(odd, market, selection) {
 
 function isLikelyMinuteAsOdd(odd, market, selection) {
   if (!Number.isFinite(odd) || !Number.isInteger(odd) || odd < 1 || odd > 120) return false;
+  if (isCornerTotalRangeSelection(selection, market)) return false;
   if (isTimelineLeakMarket(market) || isTimelineLeakSelection(selection)) return true;
   if (isLikelyTeamNameSelection(selection)) return true;
   if (isLikelyScoreboardSelection(selection)) return true;
@@ -1363,8 +1384,8 @@ function isJunkOddsSelection(selection) {
   if (/^\d+°\s/.test(s)) return true;
   if (/^1° Impedimento$/i.test(s)) return true;
   if (/^\d+\s+[A-Za-zÀ-ú]{3,}.*\d/.test(s)) return true;
-  if (/^(Mais de|Menos de)\s+/.test(s)) {
-    const linePart = s.replace(/^(Mais de|Menos de)\s+/, "");
+  if (/^(Mais de|Menos de|Exatamente)\s+/.test(s)) {
+    const linePart = s.replace(/^(Mais de|Menos de|Exatamente)\s+/, "");
     return !isValidTotalsLine(linePart);
   }
   return false;
@@ -1444,10 +1465,13 @@ function parseOddsFromVisibleText(text) {
     if (JUNK_ODDS_SELECTIONS.test(selection)) return;
     if (isJunkTeamGoalsSelection(mkt, selection)) return;
     if (isJunkPlayerPropSelection(mkt, selection)) return;
-    if (isJunkOddsSelection(selection)) return;
+    if (isJunkOddsSelection(selection) && !isCornerTotalRangeSelection(selection, mkt)) return;
     if (isLikelyMinuteAsOdd(odd, mkt, selection)) return;
     if (isLikelyStatCountAsOdd(odd, mkt, selection)) return;
-    const validSelection = isValidSelection(selection) || /^.+\s-\s\d{1,2}\+$/.test(selection);
+    const validSelection =
+      isValidSelection(selection) ||
+      /^.+\s-\s\d{1,2}\+$/.test(selection) ||
+      isCornerTotalRangeSelection(selection, mkt);
     if (!validSelection) return;
     const key = `${mkt}|${selection}|${odd}`;
     if (seen.has(key)) return;
@@ -1547,14 +1571,24 @@ function parseOddsFromVisibleText(text) {
       }
     }
 
-    if (isSkippedOddsLine(line)) continue;
-
     if (isLineValue(line) && market !== "—") {
       pendingLines.push(line);
       continue;
     }
 
-    if (/^(Mais de|Menos de)$/i.test(line) && !isPlayerPropMarket(market)) {
+    if (isCornerTotalRangeSelection(line, market)) {
+      const odd = parseOdd(lines[i + 1]);
+      if (isValidOdd(odd)) {
+        pushOdd({ market, selection: line, odds: odd });
+        pendingLines = [];
+        i++;
+        continue;
+      }
+    }
+
+    if (isSkippedOddsLine(line)) continue;
+
+    if (isTotalsDirectionLine(line) && !isPlayerPropMarket(market)) {
       const direction = line;
       const lineAfter = lines[i + 1];
       const oddAfterLine = parseOdd(lines[i + 2]);
@@ -2214,6 +2248,7 @@ const MARKET_CATEGORY_TABS = [
   "Popular",
   "Instantâneas",
   "Escanteios/Cartões",
+  "Escanteios",
   "Gols",
   "1º Tempo/2º Tempo",
   "Jogador",
@@ -2238,8 +2273,9 @@ const MARKET_CATEGORY_TABS_VISIT = [
 
 const PREMATCH_MARKET_TABS_VISIT = [
   "Popular",
-  "Jogador a Marcar",
+  "Escanteios",
   "Gols",
+  "Jogador a Marcar",
   "Handicap",
   "Odds Asiáticas",
 ];
@@ -2344,8 +2380,16 @@ function isInMarketTabBand(rect, innerHeight = 800, innerWidth = 1200, pageMode 
 function gluedMarketTabCount(text) {
   const s = normalizeMarketTabLabel(text);
   if (!s) return 0;
-  return MARKET_CATEGORY_TABS.filter((label) => new RegExp(escapeRegExp(label), "i").test(s))
-    .length;
+  let remaining = s;
+  let count = 0;
+  const tabs = [...MARKET_CATEGORY_TABS].sort((a, b) => b.length - a.length);
+  for (const label of tabs) {
+    const re = new RegExp(escapeRegExp(label), "i");
+    if (!re.test(remaining)) continue;
+    count++;
+    remaining = remaining.replace(re, " ");
+  }
+  return count;
 }
 
 function isGluedMarketTabContainer(text) {
@@ -2364,6 +2408,7 @@ function scoreMarketTabBarContainer(text) {
   if (/Gols/i.test(text)) score += 1;
   if (/Instant/i.test(text)) score += 1;
   if (/Escanteios\/Cartões/i.test(text)) score += 2;
+  if (/\bEscanteios\b/i.test(text)) score += 2;
   if (/\bTodos\b/i.test(text)) score += 2;
   if (/Criar Aposta/i.test(text)) score += 1;
   return score;
@@ -2452,7 +2497,7 @@ function isPlayerMarketTabKey(key) {
 }
 
 function isCornerMarketTabKey(key) {
-  return key === "Escanteios/Cartões";
+  return key === "Escanteios/Cartões" || key === "Escanteios";
 }
 
 const STATS_SUB_TAB_KEYS = [
@@ -4830,7 +4875,7 @@ const MIN_EXTRACT_PLAYER_INTERVAL_MS = 30_000;
 const MIN_PAGE_TEXT_FOR_EXTRACT = 3_000;
 const EXTRACT_RETRY_DELAY_MS = 5_000;
 const PAGE_READY_MARKET_RE =
-  /\b(?:Resultado Final|Partida\s*-\s*Gols|Escanteios\/Cartões|Chance Dupla|Marcadores de Gol)\b/i;
+  /\b(?:Resultado Final|Partida\s*-\s*Gols|Escanteios\/Cartões|\bEscanteios\b|Total de Escanteios|Chance Dupla|Marcadores de Gol)\b/i;
 const PAGE_READY_TEAMS_RE = /\b[A-Za-zÀ-ú]{2,}(?:\s+[A-Za-zÀ-ú.'-]+)*\s+v\s+[A-Za-zÀ-ú]/i;
 const EXTRACT_PLAYER_STORAGE_KEY = "bet365-extract-player-state";
 const EXTRACT_PLAYER_BALL_SIZE_PX = 72;
@@ -6947,7 +6992,8 @@ function collectFrameWalkTexts() {
   let drag = null;
   let tickTimer = null;
   const getPageVisibleText =
-    options.getPageVisibleText || (() => document.body?.innerText || document.documentElement?.innerText || "");
+    options.getPageVisibleText ||
+    (() => document.body?.innerText || document.documentElement?.innerText || "");
   const hasMarketDom =
     options.hasMarketDom ||
     (() =>
@@ -6960,14 +7006,18 @@ function collectFrameWalkTexts() {
     text: getPageVisibleText(),
     hasMarketDom: hasMarketDom(),
   });
-  const isPageReady = options.isPageReady || (() => {
-    const ctx = getPageReadyContext();
-    return isPageReadyForExtract(ctx.text, { hasMarketDom: ctx.hasMarketDom });
-  });
-  const isPageFailed = options.isPageFailed || (() => {
-    const ctx = getPageReadyContext();
-    return isPageLikelyFailedToLoad(ctx.text, { hasMarketDom: ctx.hasMarketDom });
-  });
+  const isPageReady =
+    options.isPageReady ||
+    (() => {
+      const ctx = getPageReadyContext();
+      return isPageReadyForExtract(ctx.text, { hasMarketDom: ctx.hasMarketDom });
+    });
+  const isPageFailed =
+    options.isPageFailed ||
+    (() => {
+      const ctx = getPageReadyContext();
+      return isPageLikelyFailedToLoad(ctx.text, { hasMarketDom: ctx.hasMarketDom });
+    });
   const RESTORE_FIRST_RUN_DELAY_MS = 8_000;
 
   const root = document.createElement("div");
