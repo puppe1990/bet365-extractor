@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.30";
+const VERSION = "3.10.31";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -526,7 +526,7 @@ const SKIP_ODDS_LINES =
   /^(CA|SUBSTITUIÇÃO\+|Mostrar Mais|Popular|Criar Aposta|Instantâneas|Todos|Ao-Vivo|Jogador\/Contagem|Para Marcar ou Dar Assistência|1°|Jogadores Titulares|Mercado Suspenso|\d+)$/i;
 
 const JUNK_ODDS_MARKETS =
-  /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas)/i;
+  /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas|Tênis\b)/i;
 
 const TIMELINE_LEAK_MARKET_RE = /^\d+°\s*(?:Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
 
@@ -1412,11 +1412,27 @@ function isLikelyShirtNumberPair(selection, oddRaw, lines, oddIndex) {
   );
 }
 
+function isHandicapLineToken(line) {
+  return /^[+-]\d+([.,]5)?$/.test(normalize(line));
+}
+
+function isHandicapBettingMarket(market) {
+  return /Handicap/i.test(normalize(market));
+}
+
 function isHandicapSelectionLine(line, lines, index) {
   if (!/[+-]\d/.test(line)) return false;
   let j = index + 1;
   while (j < lines.length && isSkippedOddsLine(lines[j])) j++;
   return j < lines.length && isValidOdd(parseOdd(lines[j]));
+}
+
+function composeHandicapSelection(name, token) {
+  const team = normalize(name);
+  const line = normalize(token);
+  if (!team || !line) return null;
+  if (/^Empate\b/i.test(team)) return `Empate ${line}`;
+  return `${team} ${line}`;
 }
 
 function isCornerBettingSubMarket(line) {
@@ -1646,6 +1662,29 @@ function parseOddsFromVisibleText(text) {
         pendingLines = [];
       }
       continue;
+    }
+
+    if (isHandicapBettingMarket(market)) {
+      if (isHandicapSelectionLine(line, lines, i)) {
+        let j = i + 1;
+        while (j < lines.length && isSkippedOddsLine(lines[j])) j++;
+        const odd = parseOdd(lines[j]);
+        if (isValidOdd(odd)) {
+          pushOdd({ market, selection: line, odds: odd });
+          i = j;
+          continue;
+        }
+      }
+      if (isValidSelection(line) && !isHandicapLineToken(line) && !/[+-]\d/.test(line)) {
+        const token = lines[i + 1];
+        const odd = parseOdd(lines[i + 2]);
+        const selection = composeHandicapSelection(line, token);
+        if (selection && isHandicapLineToken(token) && isValidOdd(odd)) {
+          pushOdd({ market, selection, odds: odd });
+          i += 2;
+          continue;
+        }
+      }
     }
 
     const odd = parseOdd(lines[i + 1]);
@@ -2260,6 +2299,9 @@ const MARKET_CATEGORY_TABS = [
   "Handicap",
   "Resultado",
   "Alternativas",
+  "Marcadores",
+  "Chutes",
+  "Cartões/Faltas",
 ];
 
 const MARKET_CATEGORY_TABS_VISIT = [
@@ -2275,12 +2317,15 @@ const PREMATCH_MARKET_TABS_VISIT = [
   "Popular",
   "Escanteios",
   "Gols",
+  "1º Tempo/2º Tempo",
+  "Resultado",
+  "Marcadores",
   "Jogador a Marcar",
   "Handicap",
   "Odds Asiáticas",
 ];
 
-const MARKET_TAB_VISIT_BUDGET_MS = 10_000;
+const MARKET_TAB_VISIT_BUDGET_MS = 35_000;
 const MARKET_TAB_CLICK_DELAY_MS = 280;
 const MARKET_TAB_BAND_TOP_PX = 560;
 const MARKET_TAB_BAND_TOP_RATIO = 0.55;
@@ -2500,8 +2545,21 @@ function isCornerMarketTabKey(key) {
   return key === "Escanteios/Cartões" || key === "Escanteios";
 }
 
-const MARKET_EXPAND_CLICK_DELAY_MS = 120;
-const MARKET_EXPAND_MAX_CLICKS = 48;
+const MARKET_EXPAND_CLICK_DELAY_MS = 90;
+const MARKET_EXPAND_MAX_CLICKS = 250;
+const MARKET_EXPAND_SCROLL_STEPS = 14;
+const MARKET_EXPAND_PASSES = 6;
+
+function createExpandClickState() {
+  return { clicked: new Set(), count: 0 };
+}
+
+function canExpandMore(state, startedAt, budgetMs = 35_000) {
+  if (!state) return true;
+  if (state.count >= MARKET_EXPAND_MAX_CLICKS) return false;
+  if (Date.now() - startedAt > budgetMs) return false;
+  return true;
+}
 
 const MARKET_GROUP_CONTAINER_SELECTORS = [
   "[class*='MarketGroup']",
@@ -6281,10 +6339,7 @@ function collectFrameWalkTexts() {
         if (elementIsVisible(node)) return true;
       }
     }
-    const lines = (container.innerText || "")
-      .split("\n")
-      .map(normalize)
-      .filter(Boolean);
+    const lines = (container.innerText || "").split("\n").map(normalize).filter(Boolean);
     return lines.some((line) => /^\d+[.,]\d{1,3}$/.test(line));
   }
 
@@ -6293,10 +6348,12 @@ function collectFrameWalkTexts() {
     const header = resolveMarketGroupHeader(container) || container;
     const ariaExpanded =
       header.getAttribute?.("aria-expanded") ?? container.getAttribute?.("aria-expanded");
-    if (isMarketGroupCollapsedHint({
-      ariaExpanded,
-      className: `${container.className || ""} ${header.className || ""}`,
-    })) {
+    if (
+      isMarketGroupCollapsedHint({
+        ariaExpanded,
+        className: `${container.className || ""} ${header.className || ""}`,
+      })
+    ) {
       return true;
     }
     return !marketGroupHasVisibleOdds(container);
@@ -6365,29 +6422,52 @@ function collectFrameWalkTexts() {
     return targets;
   }
 
-  async function expandCollapsedMarkets(capture, startedAt) {
+  async function expandCollapsedMarkets(capture, startedAt, clickState = null) {
+    const clicked = clickState?.clicked ?? new Set();
     let expandClicked = 0;
-    const clicked = new Set();
 
-    for (let pass = 0; pass < 3; pass++) {
-      const targets = collectExpandClickTargets();
+    for (let pass = 0; pass < MARKET_EXPAND_PASSES; pass++) {
+      if (!canExpandMore(clickState ?? { count: expandClicked, clicked }, startedAt)) break;
+      const targets = collectExpandClickTargets().sort((a, b) => {
+        const rank = (key) => (key.startsWith("more|") ? 2 : key.startsWith("ca|") ? 0 : 1);
+        return rank(a.key) - rank(b.key);
+      });
+      let passClicks = 0;
       for (const target of targets) {
-        if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) return expandClicked;
-        if (expandClicked >= MARKET_EXPAND_MAX_CLICKS) return expandClicked;
+        if (!canExpandMore(clickState ?? { count: expandClicked, clicked }, startedAt)) break;
         if (clicked.has(target.key)) continue;
         clicked.add(target.key);
         try {
           target.el.scrollIntoView({ block: "center", behavior: "instant" });
           dispatchMarketTabClick(target.el);
           expandClicked++;
+          passClicks++;
+          if (clickState) clickState.count++;
           await delay(MARKET_EXPAND_CLICK_DELAY_MS);
           capture();
         } catch (_) {}
       }
-      if (!targets.length) break;
+      if (!passClicks) break;
     }
 
     return expandClicked;
+  }
+
+  async function scrollTargetWithExpand(el, capture, startedAt, clickState, maxSteps) {
+    const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+    if (maxScroll < 20) return;
+    const step = Math.max(
+      140,
+      Math.ceil(maxScroll / Math.max(MARKET_EXPAND_SCROLL_STEPS, maxSteps || 12))
+    );
+    for (let pos = 0; pos <= maxScroll + step; pos += step) {
+      if (!canExpandMore(clickState, startedAt)) break;
+      el.scrollTop = Math.min(pos, maxScroll);
+      el.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await delay(70);
+      capture();
+      await expandCollapsedMarkets(capture, startedAt, clickState);
+    }
   }
 
   function walkTabContainer(container, consider) {
@@ -6536,15 +6616,16 @@ function collectFrameWalkTexts() {
     }
   }
 
-  async function visitMarketCategoryTabs(capture) {
+  async function visitMarketCategoryTabs(capture, clickState = null) {
     const visited = [];
     const startedAt = Date.now();
+    const state = clickState ?? createExpandClickState();
 
     await scrollMarketTabBars();
     let tabs = collectMarketCategoryTabs();
 
     for (const key of getMarketTabsVisitList()) {
-      if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) break;
+      if (!canExpandMore(state, startedAt)) break;
       let tab = tabs.find((t) => t.label === key);
       if (!tab) {
         await scrollMarketTabBars();
@@ -6558,9 +6639,11 @@ function collectFrameWalkTexts() {
         visited.push(key);
         await delay(MARKET_TAB_CLICK_DELAY_MS);
         capture();
+        await scrollPlayerPropGrids(capture, startedAt);
+        await expandCollapsedMarkets(capture, startedAt, state);
         if (isPlayerMarketTabKey(key) || isCornerMarketTabKey(key)) {
           await scrollPlayerPropGrids(capture, startedAt);
-          await expandCollapsedMarkets(capture, startedAt);
+          await expandCollapsedMarkets(capture, startedAt, state);
         }
       } catch (_) {}
     }
@@ -6598,24 +6681,13 @@ function collectFrameWalkTexts() {
       }
     };
 
-    const scrollTarget = async (el) => {
-      const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-      if (maxScroll < 20) return;
-      const step = Math.max(180, Math.ceil(maxScroll / maxSteps));
-      for (let pos = 0; pos <= maxScroll + step; pos += step) {
-        el.scrollTop = Math.min(pos, maxScroll);
-        el.dispatchEvent(new Event("scroll", { bubbles: true }));
-        await delay(100);
-        capture();
-      }
-    };
-
     capture();
     const startedAt = Date.now();
-    let expandClicked = 0;
+    const clickState = createExpandClickState();
+    const tabsVisited = await visitMarketCategoryTabs(capture, clickState);
 
     for (const target of targets.slice(0, 3)) {
-      await scrollTarget(target);
+      await scrollTargetWithExpand(target, capture, startedAt, clickState, maxSteps);
     }
 
     const marketHeaders = queryDeep(
@@ -6634,7 +6706,7 @@ function collectFrameWalkTexts() {
       } catch (_) {}
     }
 
-    expandClicked = await expandCollapsedMarkets(capture, startedAt);
+    await expandCollapsedMarkets(capture, startedAt, clickState);
 
     originals.forEach((top, el) => {
       el.scrollTop = top;
@@ -6644,8 +6716,8 @@ function collectFrameWalkTexts() {
       snapshots,
       scrollSteps: snapshots.length,
       container: String(primary.className || "scrollable").slice(0, 80),
-      tabsVisited: [],
-      expandClicked,
+      tabsVisited,
+      expandClicked: clickState.count,
       playerMarkets: snapshots.reduce(
         (sum, text) => sum + (text.match(/Jogador\s*-/gi) || []).length,
         0

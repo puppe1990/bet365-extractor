@@ -529,7 +529,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.30";
+const VERSION = "3.10.31";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -538,7 +538,7 @@ const SKIP_ODDS_LINES =
   /^(CA|SUBSTITUIÇÃO\+|Mostrar Mais|Popular|Criar Aposta|Instantâneas|Todos|Ao-Vivo|Jogador\/Contagem|Para Marcar ou Dar Assistência|1°|Jogadores Titulares|Mercado Suspenso|\d+)$/i;
 
 const JUNK_ODDS_MARKETS =
-  /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas)/i;
+  /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas|Tênis\b)/i;
 
 const TIMELINE_LEAK_MARKET_RE = /^\d+°\s*(?:Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
 
@@ -1424,11 +1424,27 @@ function isLikelyShirtNumberPair(selection, oddRaw, lines, oddIndex) {
   );
 }
 
+function isHandicapLineToken(line) {
+  return /^[+-]\d+([.,]5)?$/.test(normalize(line));
+}
+
+function isHandicapBettingMarket(market) {
+  return /Handicap/i.test(normalize(market));
+}
+
 function isHandicapSelectionLine(line, lines, index) {
   if (!/[+-]\d/.test(line)) return false;
   let j = index + 1;
   while (j < lines.length && isSkippedOddsLine(lines[j])) j++;
   return j < lines.length && isValidOdd(parseOdd(lines[j]));
+}
+
+function composeHandicapSelection(name, token) {
+  const team = normalize(name);
+  const line = normalize(token);
+  if (!team || !line) return null;
+  if (/^Empate\b/i.test(team)) return `Empate ${line}`;
+  return `${team} ${line}`;
 }
 
 function isCornerBettingSubMarket(line) {
@@ -1658,6 +1674,29 @@ function parseOddsFromVisibleText(text) {
         pendingLines = [];
       }
       continue;
+    }
+
+    if (isHandicapBettingMarket(market)) {
+      if (isHandicapSelectionLine(line, lines, i)) {
+        let j = i + 1;
+        while (j < lines.length && isSkippedOddsLine(lines[j])) j++;
+        const odd = parseOdd(lines[j]);
+        if (isValidOdd(odd)) {
+          pushOdd({ market, selection: line, odds: odd });
+          i = j;
+          continue;
+        }
+      }
+      if (isValidSelection(line) && !isHandicapLineToken(line) && !/[+-]\d/.test(line)) {
+        const token = lines[i + 1];
+        const odd = parseOdd(lines[i + 2]);
+        const selection = composeHandicapSelection(line, token);
+        if (selection && isHandicapLineToken(token) && isValidOdd(odd)) {
+          pushOdd({ market, selection, odds: odd });
+          i += 2;
+          continue;
+        }
+      }
     }
 
     const odd = parseOdd(lines[i + 1]);

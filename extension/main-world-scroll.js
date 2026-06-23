@@ -15,6 +15,9 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     "Handicap",
     "Resultado",
     "Alternativas",
+    "Marcadores",
+    "Chutes",
+    "Cartões/Faltas",
   ];
 
   const MARKET_CATEGORY_TABS_VISIT = [
@@ -30,12 +33,15 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     "Popular",
     "Escanteios",
     "Gols",
+    "1º Tempo/2º Tempo",
+    "Resultado",
+    "Marcadores",
     "Jogador a Marcar",
     "Handicap",
     "Odds Asiáticas",
   ];
 
-  const MARKET_TAB_VISIT_BUDGET_MS = 10_000;
+  const MARKET_TAB_VISIT_BUDGET_MS = 35_000;
   const MARKET_TAB_CLICK_DELAY_MS = 280;
   const MARKET_TAB_BAND_TOP_PX = 560;
   const MARKET_TAB_BAND_TOP_RATIO = 0.55;
@@ -256,8 +262,21 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
   function isCornerMarketTabKey(key) {
     return key === "Escanteios/Cartões" || key === "Escanteios";
   }
-  const MARKET_EXPAND_CLICK_DELAY_MS = 120;
-  const MARKET_EXPAND_MAX_CLICKS = 48;
+  const MARKET_EXPAND_CLICK_DELAY_MS = 90;
+  const MARKET_EXPAND_MAX_CLICKS = 250;
+  const MARKET_EXPAND_SCROLL_STEPS = 14;
+  const MARKET_EXPAND_PASSES = 6;
+
+  function createExpandClickState() {
+    return { clicked: new Set(), count: 0 };
+  }
+
+  function canExpandMore(state, startedAt, budgetMs = 35_000) {
+    if (!state) return true;
+    if (state.count >= MARKET_EXPAND_MAX_CLICKS) return false;
+    if (Date.now() - startedAt > budgetMs) return false;
+    return true;
+  }
 
   const MARKET_GROUP_CONTAINER_SELECTORS = [
     "[class*='MarketGroup']",
@@ -692,29 +711,52 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     return targets;
   }
 
-  async function expandCollapsedMarkets(capture, startedAt) {
+  async function expandCollapsedMarkets(capture, startedAt, clickState = null) {
+    const clicked = clickState?.clicked ?? new Set();
     let expandClicked = 0;
-    const clicked = new Set();
 
-    for (let pass = 0; pass < 3; pass++) {
-      const targets = collectExpandClickTargets();
+    for (let pass = 0; pass < MARKET_EXPAND_PASSES; pass++) {
+      if (!canExpandMore(clickState ?? { count: expandClicked, clicked }, startedAt)) break;
+      const targets = collectExpandClickTargets().sort((a, b) => {
+        const rank = (key) => (key.startsWith("more|") ? 2 : key.startsWith("ca|") ? 0 : 1);
+        return rank(a.key) - rank(b.key);
+      });
+      let passClicks = 0;
       for (const target of targets) {
-        if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) return expandClicked;
-        if (expandClicked >= MARKET_EXPAND_MAX_CLICKS) return expandClicked;
+        if (!canExpandMore(clickState ?? { count: expandClicked, clicked }, startedAt)) break;
         if (clicked.has(target.key)) continue;
         clicked.add(target.key);
         try {
           target.el.scrollIntoView({ block: "center", behavior: "instant" });
           dispatchTabClick(target.el);
           expandClicked++;
+          passClicks++;
+          if (clickState) clickState.count++;
           await delay(MARKET_EXPAND_CLICK_DELAY_MS);
           capture();
         } catch (_) {}
       }
-      if (!targets.length) break;
+      if (!passClicks) break;
     }
 
     return expandClicked;
+  }
+
+  async function scrollTargetWithExpand(el, capture, startedAt, clickState, steps) {
+    const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+    if (maxScroll < 20) return;
+    const step = Math.max(
+      140,
+      Math.ceil(maxScroll / Math.max(MARKET_EXPAND_SCROLL_STEPS, steps || 10))
+    );
+    for (let pos = 0; pos <= maxScroll + step; pos += step) {
+      if (!canExpandMore(clickState, startedAt)) break;
+      el.scrollTop = Math.min(pos, maxScroll);
+      el.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await delay(70);
+      capture();
+      await expandCollapsedMarkets(capture, startedAt, clickState);
+    }
   }
 
   async function scrollPlayerPropGrids(capture, startedAt) {
@@ -756,15 +798,16 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     }
   }
 
-  async function visitMarketCategoryTabs(capture) {
+  async function visitMarketCategoryTabs(capture, clickState = null) {
     const visited = [];
     const startedAt = Date.now();
+    const state = clickState ?? createExpandClickState();
 
     await scrollMarketTabBars();
     let tabs = collectMarketCategoryTabs();
 
     for (const key of getMarketTabsVisitList()) {
-      if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) break;
+      if (!canExpandMore(state, startedAt)) break;
       let tab = tabs.find((t) => t.label === key);
       if (!tab) {
         await scrollMarketTabBars();
@@ -778,9 +821,11 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
         visited.push(key);
         await delay(MARKET_TAB_CLICK_DELAY_MS);
         capture();
+        await scrollPlayerPropGrids(capture, startedAt);
+        await expandCollapsedMarkets(capture, startedAt, state);
         if (isPlayerMarketTabKey(key) || isCornerMarketTabKey(key)) {
           await scrollPlayerPropGrids(capture, startedAt);
-          await expandCollapsedMarkets(capture, startedAt);
+          await expandCollapsedMarkets(capture, startedAt, state);
         }
       } catch (_) {}
     }
@@ -801,9 +846,9 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
 
   capture();
   const startedAt = Date.now();
+  const clickState = createExpandClickState();
   const tabsFound = collectMarketCategoryTabs().length;
-  const tabsVisited = await visitMarketCategoryTabs(capture);
-  const expandClicked = await expandCollapsedMarkets(capture, startedAt);
+  const tabsVisited = await visitMarketCategoryTabs(capture, clickState);
 
   const roots = [];
   [
@@ -860,7 +905,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
   };
 
   for (const target of targets.slice(0, 3)) {
-    await scrollTarget(target);
+    await scrollTargetWithExpand(target, capture, startedAt, clickState, steps);
   }
 
   const marketHeaders = queryDeep(
@@ -879,7 +924,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     } catch (_) {}
   }
 
-  await expandCollapsedMarkets(capture, startedAt);
+  await expandCollapsedMarkets(capture, startedAt, clickState);
 
   originals.forEach((top, el) => {
     el.scrollTop = top;
@@ -897,7 +942,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     playerMarkets,
     tabsVisited,
     tabsFound,
-    expandClicked,
+    expandClicked: clickState.count,
     world: "MAIN",
   };
 }

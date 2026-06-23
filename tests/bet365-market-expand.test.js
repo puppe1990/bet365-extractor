@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  canExpandMore,
+  createExpandClickState,
   isMarketCaExpandText,
   isMarketExpandControlText,
   isMarketGroupCollapsedHint,
   isMarketShowMoreText,
+  MARKET_EXPAND_MAX_CLICKS,
   shouldClickMarketExpandControl,
 } from "../lib/bet365-market-expand.js";
 
@@ -24,6 +27,13 @@ describe("bet365 market expand controls", () => {
     assert.equal(shouldClickMarketExpandControl("CA", { collapsed: false }), false);
     assert.equal(shouldClickMarketExpandControl("Mostrar Mais", { collapsed: false }), true);
     assert.equal(shouldClickMarketExpandControl("Popular", { collapsed: true }), false);
+  });
+
+  it("controla limite global de cliques de expansão", () => {
+    const state = createExpandClickState();
+    state.count = MARKET_EXPAND_MAX_CLICKS;
+    assert.equal(canExpandMore(state, Date.now()), false);
+    assert.equal(canExpandMore(createExpandClickState(), Date.now()), true);
   });
 
   it("infere estado recolhido por aria-expanded e classes", () => {

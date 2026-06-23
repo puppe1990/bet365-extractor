@@ -505,6 +505,16 @@ describe("parseOddsFromVisibleText", () => {
     assert.ok(odds.filter((o) => /Escanteio/i.test(o.market)).length >= 15);
   });
 
+  it("extrai handicap de escanteios com time e linha em linhas separadas", () => {
+    const fixture = readFileSync(join(__dir, "fixtures/corner-handicap-prematch.txt"), "utf8");
+    const odds = parseOddsFromVisibleText(fixture);
+    const byKey = Object.fromEntries(odds.map((o) => [`${o.market}|${o.selection}`, o]));
+
+    assert.equal(byKey["Escanteios - Handicap|Jordânia +2"].odds, 2.05);
+    assert.equal(byKey["Escanteios - Handicap|Empate -2"].odds, 7.5);
+    assert.equal(byKey["Escanteios - Handicap|Argélia -2"].odds, 2.05);
+  });
+
   it("associa mercados e linhas de gols do texto visível ao vivo", () => {
     const odds = parseOddsFromVisibleText(INPLAY_ODDS_FIXTURE);
     const byKey = Object.fromEntries(odds.map((o) => [`${o.market}|${o.selection}`, o]));

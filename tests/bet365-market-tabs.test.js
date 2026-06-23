@@ -47,7 +47,7 @@ describe("bet365 market category tabs", () => {
 
   it("normaliza espaços no rótulo", () => {
     assert.equal(normalizeMarketTabLabel("  Jogador \n"), "Jogador");
-    assert.equal(MARKET_CATEGORY_TABS.length, 15);
+    assert.equal(MARKET_CATEGORY_TABS.length, 18);
     assert.ok(isMarketCategoryTabLabel("Todos"));
     assert.ok(MARKET_CATEGORY_TABS_VISIT.includes("Todos"));
     assert.ok(MARKET_CATEGORY_TABS_VISIT.includes("Jogador"));

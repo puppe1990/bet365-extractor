@@ -145,6 +145,8 @@ describe("extension sniffer wiring", () => {
     assert.match(template, /getMarketTabsVisitList/);
     assert.match(template, /resolveMarketTabPageMode/);
     assert.match(template, /isPlayerMarketTabKey/);
+    assert.match(template, /scrollTargetWithExpand/);
+    assert.match(template, /createExpandClickState/);
     assert.match(template, /extractSidePanelFromTexts/);
     assert.doesNotMatch(
       template,
@@ -233,6 +235,8 @@ describe("extension sniffer wiring", () => {
     assert.match(source, /MARKET_TAB_CONTAINER_SELECTORS/);
     assert.match(source, /expandCollapsedMarkets/);
     assert.match(source, /expandClicked/);
+    assert.match(source, /scrollTargetWithExpand/);
+    assert.match(source, /createExpandClickState/);
     assert.match(source, /isMarketCaExpandText/);
     assert.match(source, /Mostrar Mais/);
   });
