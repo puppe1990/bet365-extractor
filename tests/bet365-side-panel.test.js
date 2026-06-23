@@ -11,6 +11,9 @@ import {
   reconcileTimelineCorners,
   reconcileTimelineGoals,
   enrichGoalHint,
+  stripGoalAbsorbedTimelineEvents,
+  extractGoalScorersSectionFromText,
+  extractLineupSectionFromText,
   isRealTimelineGoal,
   parseGoalScorersFromText,
   parseGoalsFromScoreboardText,
@@ -253,6 +256,24 @@ describe("reconcileTimelineGoals", () => {
 
     assert.equal(enriched.method, "Chute");
     assert.equal(enriched.assist, "E Haaland");
+  });
+
+  it("remove evento de chute já absorvido pelo gol recuperado", () => {
+    const events = [
+      { minute: 46, type: "event", description: "Pedersen - Chute", source: "visible-text" },
+      {
+        minute: 43,
+        type: "goal",
+        description: "1° Goal | M Pedersen - Chute",
+        source: "scoreboard-inferred",
+      },
+      { minute: 17, type: "corner", description: "5° Escanteio", source: "visible-text" },
+    ];
+    const out = stripGoalAbsorbedTimelineEvents(events);
+
+    assert.equal(out.filter((e) => e.type === "event" && /Chute/.test(e.description)).length, 0);
+    assert.equal(out.filter((e) => e.type === "goal").length, 1);
+    assert.equal(out.filter((e) => e.type === "corner").length, 1);
   });
 
   it("inclui Chute no gol recuperado quando cronologia tem detalhe", () => {
@@ -624,14 +645,78 @@ describe("buildIpeBlobDebug", () => {
 });
 
 describe("parseLineupFromTitularesText", () => {
-  it("extrai nomes do grid Jogadores Titulares", () => {
-    const lineup = parseLineupFromTitularesText(readFixture("side-panel-titulares-grid.txt"));
+  it("extrai nomes do grid Jogadores Titulares sem contexto de mercado", () => {
+    const lineup = parseLineupFromTitularesText(readFixture("side-panel-titulares-clean.txt"));
 
     assert.ok(lineup);
     assert.equal(lineup.source, "visible-titulares");
     assert.ok(lineup.home.starters.includes("Lionel Messi"));
     assert.ok(lineup.home.starters.includes("Nicolas Otamendi"));
     assert.ok(lineup.home.starters.length >= 8);
+  });
+
+  it("ignora Jogadores Titulares de mercado Marcadores de Gol", () => {
+    const lineup = parseLineupFromTitularesText(
+      readFixture("side-panel-titulares-norway-betting.txt")
+    );
+
+    assert.equal(lineup, null);
+  });
+
+  it("separa jogadores por cabeçalho de time", () => {
+    const text = [
+      "Noruega",
+      "Erling Haaland",
+      "Martin Odegaard",
+      "Patrick Berg",
+      "M Pedersen",
+      "O Nyland",
+      "D Wolfe",
+      "E Mendy",
+      "K Ajer",
+      "T Heggem",
+      "Senegal",
+      "Sadio Mane",
+      "Kalidou Koulibaly",
+      "Ismaila Sarr",
+      "El Hadji Diouf",
+      "Sander Berge",
+      "David Wolfe",
+      "Idrissa Gana Gueye",
+      "Moussa Niakhate",
+    ].join("\n");
+    const lineup = parseLineupFromTitularesText(text, {
+      homeTeam: "Noruega",
+      awayTeam: "Senegal",
+    });
+
+    assert.ok(lineup);
+    assert.equal(lineup.source, "visible-titulares-teams");
+    assert.ok(lineup.home.starters.includes("Erling Haaland"));
+    assert.ok(lineup.away.starters.includes("Kalidou Koulibaly"));
+    assert.ok(!lineup.home.starters.includes("Sadio Mane"));
+  });
+});
+
+describe("extractGoalScorersSectionFromText", () => {
+  it("recorta bloco de marcadores com minuto", () => {
+    const chunk = extractGoalScorersSectionFromText(
+      readFixture("side-panel-marcadores-norway-junk.txt")
+    );
+
+    assert.match(chunk, /Marcadores de Gol/);
+    assert.match(chunk, /M Pedersen/);
+    assert.match(chunk, /43'/);
+  });
+});
+
+describe("extractLineupSectionFromText", () => {
+  it("recorta bloco Escalação com jogadores", () => {
+    const chunk = extractLineupSectionFromText(readFixture("side-panel-lineup.txt"));
+
+    assert.match(chunk, /Escalação/);
+    assert.match(chunk, /E Martinez/);
+    assert.match(chunk, /Suplentes/);
   });
 });
 

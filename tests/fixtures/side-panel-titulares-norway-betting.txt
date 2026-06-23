@@ -1,0 +1,25 @@
+Marcadores de Gol
+CA
+SUBSTITUIÇÃO+
+Jogadores Titulares
+9
+Erling Haaland
+11
+Nicolas Jackson
+10
+Sadio Mane
+7
+Alexander Sorloth
+18
+Ismaila Sarr
+20
+Antonio Nusa
+Multi Marcadores
+CA
+Jogador a Marcar ou Dar Assistência
+9
+Erling Haaland
+10
+Sadio Mane
+11
+Nicolas Jackson

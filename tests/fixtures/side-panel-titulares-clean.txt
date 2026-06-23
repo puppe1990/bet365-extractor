@@ -1,0 +1,23 @@
+Jogadores Titulares
+10
+Lionel Messi
+22
+Lautaro Martinez
+16
+Thiago Almada
+11
+Michael Gregoritsch
+24
+Enzo Fernandez
+9
+Marcel Sabitzer
+18
+Romano Schmid
+20
+Alexis Mac Allister
+8
+Nahuel Molina
+4
+Konrad Laimer
+6
+Nicolas Otamendi

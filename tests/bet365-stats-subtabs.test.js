@@ -38,6 +38,8 @@ describe("bet365 stats sub-tabs", () => {
       assert.equal(statsSubTabKey(tab), tab);
     }
     assert.equal(statsSubTabKey("Outr ›"), "Outros");
+    assert.equal(statsSubTabKey("Marcadores de Gol"), "Marcadores");
+    assert.equal(statsSubTabKey("Marcadores de Gols"), "Marcadores");
   });
 
   it("não confunde módulo in-play misto com faixa de mercados", () => {
@@ -103,7 +105,7 @@ describe("bet365 stats sub-tabs", () => {
 
     assert.deepEqual(picked.map((t) => t.key).sort(), ["chutes", "escanteios", "marcadores"]);
     assert.equal(isStatsSubTabLeafText("Gols"), true);
-    assert.equal(isStatsSubTabLeafText("Marcadores de Gol"), false);
+    assert.equal(isStatsSubTabLeafText("Marcadores de Gol"), true);
   });
 
   it("extrai stats da aba Chutes", () => {

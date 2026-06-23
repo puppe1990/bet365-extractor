@@ -128,8 +128,8 @@
     return getAllVisibleText();
   }
 
-  function getSidePanelScopedText(fromTab, key) {
-    if (!fromTab || !key) return "";
+  function getSidePanelScopedText(fromTab, key, extraTexts = []) {
+    if (!key) return "";
 
     const validators = {
       stats: (text) =>
@@ -157,7 +157,59 @@
         best = text;
       }
     }
-    return best;
+
+    if (best) return best;
+
+    const rootChunks = [];
+    SIDE_PANEL_TAB_SCOPE_SELECTORS.forEach((sel) => {
+      queryDeep(sel).forEach((el) => {
+        const text = el?.innerText || "";
+        if (text.length >= 30 && text.length <= 20000) rootChunks.push(text);
+      });
+    });
+    return findBestScopedSidePanelText([...extraTexts, ...rootChunks], key);
+  }
+
+  function extractTeamsFromHeader(text) {
+    const m = String(text || "").match(
+      /([A-Za-zÀ-ú][A-Za-zÀ-ú .'-]{2,30})\s+v\s+([A-Za-zÀ-ú][A-Za-zÀ-ú .'-]{2,30})/
+    );
+    if (!m) return {};
+    return { homeTeam: m[1].trim(), awayTeam: m[2].trim() };
+  }
+
+  function clickStatsMarcadoresSubTab(statsRoot, fromTab) {
+    const tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
+    const marcadores = tabs.find((t) => t.key === "marcadores");
+    if (!marcadores?.el) return null;
+    try {
+      marcadores.el.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
+      dispatchPanelClick(marcadores.el);
+      return marcadores.el;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function refineSidePanelTabText(key, tab, scopedText, fallbacks = []) {
+    const panelText = scopedText || getSidePanelText(tab);
+    if (key === "goalScorers") {
+      if (looksLikeGoalScorersTabContent(panelText)) return panelText;
+      return (
+        extractGoalScorersSectionFromText(panelText) ||
+        findBestScopedSidePanelText(fallbacks, "goalScorers") ||
+        panelText
+      );
+    }
+    if (key === "lineup") {
+      if (looksLikeLineupTabContent(panelText)) return panelText;
+      return (
+        extractLineupSectionFromText(panelText) ||
+        findBestScopedSidePanelText(fallbacks, "lineup") ||
+        panelText
+      );
+    }
+    return panelText;
   }
 
   function dispatchPanelClick(el) {
@@ -659,6 +711,7 @@
     if (statsTab) await delay(180);
 
     const statsRoot = findLiveStatsPanelRoot(statsTab) || findSidePanelRoot(statsTab);
+    let lastStatsTab = statsTab;
     const subTabBudget = Math.min(
       SIDE_PANEL_STATS_SUB_TAB_BUDGET_MS,
       Math.max(0, sidePanelRemainingMs() - 4000)
@@ -679,10 +732,16 @@
       const essential =
         key === "timeline" || key === "lineup" || key === "playerStats" || key === "goalScorers";
       if (!essential && sidePanelRemainingMs() < 600) continue;
-      const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key], null, key);
+      let tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key], null, key);
+      if (!tab && key === "goalScorers") {
+        tab = clickStatsMarcadoresSubTab(statsRoot, lastStatsTab);
+      }
       tabClicks[key] = Boolean(tab);
       if (tab) await delay(essential ? 200 : 120);
-      const scopedText = getSidePanelScopedText(tab, key);
+      const scopedText = getSidePanelScopedText(tab, key, [
+        getSidePanelText(statsRoot),
+        textByTab.stats,
+      ]);
       if (key === "timeline" && tab) {
         const scrolled = await scrollTimelinePanel(tab);
         timelineScrollMeta = scrolled;
@@ -696,8 +755,14 @@
           key
         );
       } else {
-        textByTab[key] = mergeSidePanelTabText(scopedText || getSidePanelText(tab), fullText, key);
+        const refined = refineSidePanelTabText(key, tab, scopedText, [
+          getSidePanelText(statsRoot),
+          textByTab.stats,
+          getSidePanelText(tab),
+        ]);
+        textByTab[key] = mergeSidePanelTabText(refined, fullText, key);
       }
+      if (key === "stats") lastStatsTab = tab || lastStatsTab;
     }
 
     const ingested = ingestSidePanelTabStats(textByTab, textBySubTab, subTabClicks);
@@ -1396,7 +1461,10 @@
     });
     stepAt = Date.now();
 
-    const sidePanelFromText = extractSidePanelFromTexts(textByTab);
+    const sidePanelFromText = extractSidePanelFromTexts(
+      textByTab,
+      extractTeamsFromHeader(pageText)
+    );
     const sidePanelFromNet = scanNetworkSidePanel(networkLog);
     const sidePanel = mergeSidePanel(sidePanelFromText, sidePanelFromNet);
     pipeline.push({

@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.21";
+const VERSION = "3.10.22";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -2471,6 +2471,7 @@ function normalizeStatsSubTabLabel(text) {
 function statsSubTabKey(text) {
   const s = normalizeStatsSubTabLabel(text);
   if (OUTROS_TAB_RE.test(s)) return "Outros";
+  if (/^Marcadores de Gols?$/i.test(s)) return "Marcadores";
   const idx = STATS_SUB_TAB_PATTERNS.findIndex((re) => re.test(s));
   return idx >= 0 ? STATS_SUB_TAB_LABELS[idx] : null;
 }
@@ -3172,7 +3173,7 @@ function reconcileTimelineGoals(events, options = {}) {
     coveredOrdinals.add(ordinal);
   }
 
-  return dedupeTimelineEvents(out);
+  return stripGoalAbsorbedTimelineEvents(dedupeTimelineEvents(out));
 }
 
 const PLAYER_SHORT_NAME_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;
@@ -3424,6 +3425,41 @@ function dedupeTimelineEvents(events) {
   });
 }
 
+function goalDetailToken(description = "") {
+  const parts = String(description).split("|").map((p) => p.trim());
+  for (const part of parts) {
+    const shot = part.match(/^(.+?)\s*-\s*(Chute|Cabeçada|Pênalti)$/i);
+    if (shot) {
+      const surname = shot[1].trim().split(/\s+/).pop().toLowerCase();
+      return { surname, method: shot[2].toLowerCase() };
+    }
+    const plain = part.match(/^([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]+)$/);
+    if (plain && !/^\d+[º°]/.test(plain[1])) {
+      const surname = plain[1].trim().split(/\s+/).pop().toLowerCase();
+      return { surname, method: null };
+    }
+  }
+  return null;
+}
+
+function stripGoalAbsorbedTimelineEvents(events) {
+  const goals = events.filter((e) => e.type === "goal");
+  if (!goals.length) return events;
+
+  const absorbed = goals.map((g) => goalDetailToken(g.description)).filter(Boolean);
+
+  return events.filter((e) => {
+    if (e.type === "goal") return true;
+    const shot = String(e.description || "").match(/^(.+?)\s*-\s*(Chute|Cabeçada|Pênalti)$/i);
+    if (!shot) return true;
+    const surname = shot[1].trim().split(/\s+/).pop().toLowerCase();
+    const method = shot[2].toLowerCase();
+    return !absorbed.some(
+      (g) => g.surname === surname && (!g.method || g.method === method)
+    );
+  });
+}
+
 function buildTimelineEvent(minute, details) {
   const filtered = details.filter((d) => isTimelineEventDetail(d));
   if (!shouldKeepTimelineEvent(filtered)) return null;
@@ -3556,7 +3592,7 @@ function buildTimelineFromPanelTexts(textByTab = {}, options = {}) {
     marcadoresText: textByTab.statsSubTabs?.marcadores || textByTab.goalScorers,
     goalScorersText: textByTab.goalScorers,
   });
-  return timeline;
+  return stripGoalAbsorbedTimelineEvents(timeline);
 }
 
 function mergeTimelineEvents(...lists) {
@@ -3779,40 +3815,140 @@ function parsePlayerFinalizationsFromNetworkBlob(data, url = "") {
 }
 
 const TITULARES_STOP_RE =
-  /^(Mostrar Mais|A Qualquer Momento|Marcadores de Gol|2°\s*Gol|Partida\s*-|Para Marcar ou Dar Assistência|Jogador\s*[-/])/i;
+  /^(Mostrar Mais|A Qualquer Momento|Marcadores de Gol|Multi Marcadores|2°\s*Gol|Partida\s*-|Para Qualquer um|Para Marcar ou Dar Assistência|Jogador\s*[-/])/i;
 const TITULARES_SKIP_RE = /^(CA|SUBSTITUIÇÃO\+?)$/i;
+const TITULARES_BETTING_CONTEXT_RE =
+  /^(Marcadores de Gol|Multi Marcadores|Para Qualquer um|Jogador a Marcar)/i;
 
-const TITULARES_SECTION_RE = /^(Jogadores Titulares|Jogador a Marcar ou Dar Assistência)$/i;
+const TITULARES_SECTION_RE = /^Jogadores Titulares$/i;
 
-function parseLineupFromTitularesText(text) {
-  const lines = linesFromText(text);
+function escapeLineupTeamRe(team) {
+  return String(team || "").replace(/[.*+?^${}()|[\]\\]/g, (ch) => `\\${ch}`);
+}
+
+function isBettingMarketTitularesContext(lines, sectionIndex) {
+  for (let i = Math.max(0, sectionIndex - 8); i < sectionIndex; i++) {
+    if (TITULARES_BETTING_CONTEXT_RE.test(lines[i])) return true;
+  }
+  return false;
+}
+
+function collectTitularesBlock(lines, startIndex) {
   const names = [];
   const seen = new Set();
 
-  for (let i = 0; i < lines.length; i++) {
-    if (!TITULARES_SECTION_RE.test(lines[i])) continue;
-
-    for (let j = i + 1; j < lines.length; j++) {
-      const line = lines[j];
-      if (TITULARES_SECTION_RE.test(line)) break;
-      if (TITULARES_SKIP_RE.test(line)) continue;
-      if (TITULARES_STOP_RE.test(line)) break;
-      if (/^\d{1,2}$/.test(line)) continue;
-      if (/^\d+(\.\d{2})?$/.test(line)) continue;
-      if (!isPlayerFullName(line) || TITULARES_SECTION_RE.test(line)) continue;
-      if (seen.has(line)) continue;
-      seen.add(line);
-      names.push(line);
-    }
+  for (let j = startIndex + 1; j < lines.length; j++) {
+    const line = lines[j];
+    if (TITULARES_SECTION_RE.test(line)) break;
+    if (TITULARES_SKIP_RE.test(line)) continue;
+    if (TITULARES_STOP_RE.test(line)) break;
+    if (/^\d{1,2}$/.test(line)) continue;
+    if (/^\d+(\.\d{2})?$/.test(line)) continue;
+    if (!isPlayerFullName(line)) continue;
+    if (seen.has(line)) continue;
+    seen.add(line);
+    names.push(line);
   }
 
-  if (names.length < 8) return null;
+  return names;
+}
 
+function parseLineupByTeamHeaders(text, homeTeam, awayTeam) {
+  if (!homeTeam || !awayTeam) return null;
+  const lines = linesFromText(text);
+  const home = [];
+  const away = [];
+  let side = null;
+  const homeRe = new RegExp(`^${escapeLineupTeamRe(homeTeam)}$`, "i");
+  const awayRe = new RegExp(`^${escapeLineupTeamRe(awayTeam)}$`, "i");
+
+  for (const line of lines) {
+    if (homeRe.test(line)) {
+      side = "home";
+      continue;
+    }
+    if (awayRe.test(line)) {
+      side = "away";
+      continue;
+    }
+    if (TITULARES_STOP_RE.test(line) || TITULARES_SECTION_RE.test(line)) {
+      side = null;
+      continue;
+    }
+    if (!isPlayerNameLine(line)) continue;
+    if (side === "home" && home.length < 11) home.push(line);
+    else if (side === "away" && away.length < 11) away.push(line);
+  }
+
+  if (home.length < 8 || away.length < 8) return null;
   return {
-    home: { starters: names.slice(0, 11), subs: [], goals: [] },
-    away: { starters: names.slice(11, 22), subs: names.slice(22), goals: [] },
-    source: "visible-titulares",
+    home: { starters: home, subs: [], goals: [] },
+    away: { starters: away, subs: [], goals: [] },
+    source: "visible-titulares-teams",
   };
+}
+
+function extractLineupSectionFromText(text) {
+  const lines = linesFromText(text);
+  const start = lines.findIndex((l) => /^Escalação$/i.test(l));
+  if (start < 0) return "";
+
+  const out = [];
+  for (let i = start; i < lines.length; i++) {
+    if (i > start && /^(Cronologia|Tabela|Estat\.|FINALIZA)/i.test(lines[i])) break;
+    out.push(lines[i]);
+  }
+  const chunk = out.join("\n");
+  const playerCount = out.filter((line) => isPlayerNameLine(line)).length;
+  return /Escalação/i.test(chunk) && playerCount >= 8 ? chunk : "";
+}
+
+function extractGoalScorersSectionFromText(text) {
+  const lines = linesFromText(text);
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^Marcadores de Gols?$/i.test(lines[i])) continue;
+    const chunk = lines.slice(i, Math.min(lines.length, i + 120)).join("\n");
+    if (/\nMarcadores\n/i.test(chunk) && /\d{1,3}['′]\s*$/m.test(chunk)) return chunk;
+    if (
+      /\n[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,28}\n\d{1,3}['′]\s*$/m.test(chunk)
+    ) {
+      return chunk;
+    }
+  }
+  return "";
+}
+
+function parseLineupFromTitularesText(text, options = {}) {
+  const lines = linesFromText(text);
+  const byTeams = parseLineupByTeamHeaders(text, options.homeTeam, options.awayTeam);
+  if (byTeams) return byTeams;
+
+  const blocks = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!TITULARES_SECTION_RE.test(lines[i])) continue;
+    if (isBettingMarketTitularesContext(lines, i)) continue;
+    const names = collectTitularesBlock(lines, i);
+    if (names.length >= 8) blocks.push(names);
+  }
+
+  if (blocks.length >= 2) {
+    return {
+      home: { starters: blocks[0].slice(0, 11), subs: [], goals: [] },
+      away: { starters: blocks[1].slice(0, 11), subs: [], goals: [] },
+      source: "visible-titulares",
+    };
+  }
+
+  if (blocks.length === 1) {
+    const names = blocks[0];
+    return {
+      home: { starters: names.slice(0, 11), subs: [], goals: [] },
+      away: { starters: names.slice(11, 22), subs: names.slice(22), goals: [] },
+      source: "visible-titulares",
+    };
+  }
+
+  return null;
 }
 
 function parseLineupFromText(text) {
@@ -3947,9 +4083,14 @@ function mergeSidePanelTabText(scoped, full, key) {
 
 function extractSidePanelFromTexts(textByTab = {}, options = {}) {
   const statsSubTabMerged = textByTab.statsSubTabMerged || "";
+  const goalScorersText =
+    extractGoalScorersSectionFromText(textByTab.goalScorers || "") ||
+    extractGoalScorersSectionFromText(textByTab.statsSubTabs?.marcadores || "") ||
+    textByTab.goalScorers ||
+    "";
   const statsText = [
     textByTab.stats || "",
-    textByTab.goalScorers || "",
+    goalScorersText,
     textByTab.lateral || "",
     statsSubTabMerged,
   ]
@@ -3957,13 +4098,18 @@ function extractSidePanelFromTexts(textByTab = {}, options = {}) {
     .join("\n");
   const playerText = textByTab.playerStats || "";
   const timelineText = textByTab.timeline || "";
-  const lineupText = textByTab.lineup || "";
+  const lineupText =
+    extractLineupSectionFromText(textByTab.lineup || "") || textByTab.lineup || "";
   const panelMerged = [statsText, playerText, timelineText, lineupText].join("\n");
   const playerFinalizations = mergePlayerFinalizations(
     parsePlayerFinalizationsFromText(playerText),
     parsePlayerFinalizationsFromText(statsText),
     parsePlayerFinalizationsFromText(panelMerged)
   );
+  const lineupOpts = {
+    homeTeam: options.homeTeam,
+    awayTeam: options.awayTeam,
+  };
 
   return {
     timeline: buildTimelineFromPanelTexts(textByTab, {
@@ -3972,10 +4118,12 @@ function extractSidePanelFromTexts(textByTab = {}, options = {}) {
     }),
     lineup:
       parseLineupFromText(lineupText) ||
+      parseLineupFromText(extractLineupSectionFromText(statsText)) ||
       parseLineupFromText(statsText) ||
       parseLineupFromText(timelineText) ||
       parseLineupFromText(playerText) ||
-      parseLineupFromTitularesText([statsText, playerText, timelineText, lineupText].join("\n")),
+      parseLineupByTeamHeaders(panelMerged, options.homeTeam, options.awayTeam) ||
+      parseLineupFromTitularesText(panelMerged, lineupOpts),
     playerFinalizations,
     actionAreas: parseActionAreasFromText(statsText) || parseActionAreasFromText(playerText),
     tabCapture: {
@@ -4470,6 +4618,35 @@ function looksLikeTimelineTabContent(text) {
   return (s.match(/\d{1,3}['′]/g) || []).length >= 2;
 }
 
+function findBestScopedSidePanelText(texts, key) {
+  const validators = {
+    goalScorers: looksLikeGoalScorersTabContent,
+    lineup: looksLikeLineupTabContent,
+    timeline: looksLikeTimelineTabContent,
+    lateral: looksLikeLateralStatsPanelText,
+  };
+  const validate = validators[key];
+  if (!validate) return "";
+
+  let best = "";
+  let bestScore = 0;
+  for (const text of texts) {
+    const chunk = String(text || "");
+    if (!chunk || !validate(chunk)) continue;
+    const ranked = scoreSidePanelTabContent(chunk, key) || chunk.length;
+    if (ranked > bestScore) {
+      bestScore = ranked;
+      best = chunk;
+    }
+  }
+  return best;
+}
+
+function looksLikeLateralStatsPanelText(text) {
+  const s = String(text || "");
+  return /Escanteios/i.test(s) || (/Lateral/i.test(s) && /Laterais?/i.test(s));
+}
+
 function scoreSidePanelTabContent(text, key) {
   const validators = {
     goalScorers: looksLikeGoalScorersTabContent,
@@ -4796,8 +4973,8 @@ function collectFrameWalkTexts() {
     return getAllVisibleText();
   }
 
-  function getSidePanelScopedText(fromTab, key) {
-    if (!fromTab || !key) return "";
+  function getSidePanelScopedText(fromTab, key, extraTexts = []) {
+    if (!key) return "";
 
     const validators = {
       stats: (text) =>
@@ -4825,7 +5002,59 @@ function collectFrameWalkTexts() {
         best = text;
       }
     }
-    return best;
+
+    if (best) return best;
+
+    const rootChunks = [];
+    SIDE_PANEL_TAB_SCOPE_SELECTORS.forEach((sel) => {
+      queryDeep(sel).forEach((el) => {
+        const text = el?.innerText || "";
+        if (text.length >= 30 && text.length <= 20000) rootChunks.push(text);
+      });
+    });
+    return findBestScopedSidePanelText([...extraTexts, ...rootChunks], key);
+  }
+
+  function extractTeamsFromHeader(text) {
+    const m = String(text || "").match(
+      /([A-Za-zÀ-ú][A-Za-zÀ-ú .'-]{2,30})\s+v\s+([A-Za-zÀ-ú][A-Za-zÀ-ú .'-]{2,30})/
+    );
+    if (!m) return {};
+    return { homeTeam: m[1].trim(), awayTeam: m[2].trim() };
+  }
+
+  function clickStatsMarcadoresSubTab(statsRoot, fromTab) {
+    const tabs = collectStatsSubTabCandidates(statsRoot, fromTab);
+    const marcadores = tabs.find((t) => t.key === "marcadores");
+    if (!marcadores?.el) return null;
+    try {
+      marcadores.el.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
+      dispatchPanelClick(marcadores.el);
+      return marcadores.el;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function refineSidePanelTabText(key, tab, scopedText, fallbacks = []) {
+    const panelText = scopedText || getSidePanelText(tab);
+    if (key === "goalScorers") {
+      if (looksLikeGoalScorersTabContent(panelText)) return panelText;
+      return (
+        extractGoalScorersSectionFromText(panelText) ||
+        findBestScopedSidePanelText(fallbacks, "goalScorers") ||
+        panelText
+      );
+    }
+    if (key === "lineup") {
+      if (looksLikeLineupTabContent(panelText)) return panelText;
+      return (
+        extractLineupSectionFromText(panelText) ||
+        findBestScopedSidePanelText(fallbacks, "lineup") ||
+        panelText
+      );
+    }
+    return panelText;
   }
 
   function dispatchPanelClick(el) {
@@ -5327,6 +5556,7 @@ function collectFrameWalkTexts() {
     if (statsTab) await delay(180);
 
     const statsRoot = findLiveStatsPanelRoot(statsTab) || findSidePanelRoot(statsTab);
+    let lastStatsTab = statsTab;
     const subTabBudget = Math.min(
       SIDE_PANEL_STATS_SUB_TAB_BUDGET_MS,
       Math.max(0, sidePanelRemainingMs() - 4000)
@@ -5345,15 +5575,18 @@ function collectFrameWalkTexts() {
     for (const key of SIDE_PANEL_TAB_KEYS) {
       if (key === "stats") continue;
       const essential =
-        key === "timeline" ||
-        key === "lineup" ||
-        key === "playerStats" ||
-        key === "goalScorers";
+        key === "timeline" || key === "lineup" || key === "playerStats" || key === "goalScorers";
       if (!essential && sidePanelRemainingMs() < 600) continue;
-      const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key], null, key);
+      let tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key], null, key);
+      if (!tab && key === "goalScorers") {
+        tab = clickStatsMarcadoresSubTab(statsRoot, lastStatsTab);
+      }
       tabClicks[key] = Boolean(tab);
       if (tab) await delay(essential ? 200 : 120);
-      const scopedText = getSidePanelScopedText(tab, key);
+      const scopedText = getSidePanelScopedText(tab, key, [
+        getSidePanelText(statsRoot),
+        textByTab.stats,
+      ]);
       if (key === "timeline" && tab) {
         const scrolled = await scrollTimelinePanel(tab);
         timelineScrollMeta = scrolled;
@@ -5367,12 +5600,14 @@ function collectFrameWalkTexts() {
           key
         );
       } else {
-        textByTab[key] = mergeSidePanelTabText(
-          scopedText || getSidePanelText(tab),
-          fullText,
-          key
-        );
+        const refined = refineSidePanelTabText(key, tab, scopedText, [
+          getSidePanelText(statsRoot),
+          textByTab.stats,
+          getSidePanelText(tab),
+        ]);
+        textByTab[key] = mergeSidePanelTabText(refined, fullText, key);
       }
+      if (key === "stats") lastStatsTab = tab || lastStatsTab;
     }
 
     const ingested = ingestSidePanelTabStats(textByTab, textBySubTab, subTabClicks);
@@ -6071,7 +6306,7 @@ function collectFrameWalkTexts() {
     });
     stepAt = Date.now();
 
-    const sidePanelFromText = extractSidePanelFromTexts(textByTab);
+    const sidePanelFromText = extractSidePanelFromTexts(textByTab, extractTeamsFromHeader(pageText));
     const sidePanelFromNet = scanNetworkSidePanel(networkLog);
     const sidePanel = mergeSidePanel(sidePanelFromText, sidePanelFromNet);
     pipeline.push({
