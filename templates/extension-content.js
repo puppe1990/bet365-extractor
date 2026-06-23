@@ -1114,11 +1114,12 @@
       } catch (_) {}
     };
 
+    const minScore = marketTabContainerMinScore(pageMode);
     const containers = [];
     MARKET_TAB_CONTAINER_SELECTORS.forEach((sel) => {
       queryDeep(sel).forEach((el) => {
         const score = scoreMarketTabBarContainer(el.textContent || "");
-        if (score >= 3) {
+        if (score >= minScore) {
           containers.push({ el, score });
           try {
             const rect = el.getBoundingClientRect();
@@ -1149,13 +1150,54 @@
       }
     }
 
-    return collectMarketTabCandidates(
+    let tabs = collectMarketTabCandidates(
       nodes,
       window.innerHeight,
       window.innerWidth,
       pageMode,
       containerRects
     ).map((tab) => ({ ...tab, el: tab.el }));
+
+    if (tabs.length < 3) {
+      const scanNodes = [];
+      const scanSeen = new Set();
+      const topLimit = marketTabTopLimit(window.innerHeight, pageMode) + 100;
+      for (const label of visitList) {
+        queryDeep("button, [role='tab'], span, a, div, li").forEach((el) => {
+          try {
+            const text = normalizeMarketTabLabel(el.textContent || "");
+            if (!isExactMarketTabLabel(text, label)) return;
+            if (String(el.innerText || "").length > 60) return;
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 12 || rect.height < 6) return;
+            if (!isInLeftMarketColumn(rect, window.innerWidth)) return;
+            if (rect.top < -20 || rect.top > topLimit) return;
+            const dedupe = `${label}|${Math.round(rect.top)}|${Math.round(rect.left)}`;
+            if (scanSeen.has(dedupe)) return;
+            scanSeen.add(dedupe);
+            scanNodes.push({
+              el,
+              text,
+              rect: {
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height,
+                bottom: rect.bottom,
+                right: rect.right,
+              },
+            });
+          } catch (_) {}
+        });
+      }
+      const scanned = pickMarketTabNodesByLabel(scanNodes, visitList).map((tab) => ({
+        ...tab,
+        el: tab.el,
+      }));
+      if (scanned.length > tabs.length) tabs = scanned;
+    }
+
+    return tabs;
   }
 
   async function scrollMarketTabBars() {

@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.31";
+const VERSION = "3.10.32";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -526,7 +526,7 @@ const SKIP_ODDS_LINES =
   /^(CA|SUBSTITUIÇÃO\+|Mostrar Mais|Popular|Criar Aposta|Instantâneas|Todos|Ao-Vivo|Jogador\/Contagem|Para Marcar ou Dar Assistência|1°|Jogadores Titulares|Mercado Suspenso|\d+)$/i;
 
 const JUNK_ODDS_MARKETS =
-  /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas|Tênis\b)/i;
+  /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas|Tênis\b|Futebol\s*-\s*Próximos)/i;
 
 const TIMELINE_LEAK_MARKET_RE = /^\d+°\s*(?:Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
 
@@ -2320,6 +2320,8 @@ const PREMATCH_MARKET_TABS_VISIT = [
   "1º Tempo/2º Tempo",
   "Resultado",
   "Marcadores",
+  "Cartões/Faltas",
+  "Chutes",
   "Jogador a Marcar",
   "Handicap",
   "Odds Asiáticas",
@@ -2329,8 +2331,9 @@ const MARKET_TAB_VISIT_BUDGET_MS = 35_000;
 const MARKET_TAB_CLICK_DELAY_MS = 280;
 const MARKET_TAB_BAND_TOP_PX = 560;
 const MARKET_TAB_BAND_TOP_RATIO = 0.55;
-const PREMATCH_MARKET_TAB_BAND_TOP_PX = 600;
-const PREMATCH_MARKET_TAB_BAND_TOP_RATIO = 0.62;
+const PREMATCH_MARKET_TAB_BAND_TOP_PX = 720;
+const PREMATCH_MARKET_TAB_BAND_TOP_RATIO = 0.72;
+const PREMATCH_MARKET_TAB_CONTAINER_MIN_SCORE = 2;
 const MARKET_TAB_LEFT_COLUMN_RATIO = 0.78;
 const MARKET_TAB_LEAF_MAX_TEXT_LEN = 40;
 
@@ -2456,7 +2459,34 @@ function scoreMarketTabBarContainer(text) {
   if (/\bEscanteios\b/i.test(text)) score += 2;
   if (/\bTodos\b/i.test(text)) score += 2;
   if (/Criar Aposta/i.test(text)) score += 1;
+  if (/Cart[oõ]es\/Faltas/i.test(text)) score += 2;
+  if (/Marcadores/i.test(text)) score += 1;
+  if (/Chutes/i.test(text)) score += 1;
   return score;
+}
+
+function marketTabContainerMinScore(pageMode = "auto") {
+  return pageMode === "prematch" ? PREMATCH_MARKET_TAB_CONTAINER_MIN_SCORE : 3;
+}
+
+function isExactMarketTabLabel(text, label) {
+  return new RegExp(`^${escapeRegExp(label)}$`, "i").test(normalizeMarketTabLabel(text));
+}
+
+function pickMarketTabNodesByLabel(nodes, visitList = []) {
+  const byLabel = new Map();
+  for (const node of nodes) {
+    const text = normalizeMarketTabLabel(node.text);
+    for (const label of visitList) {
+      if (!isExactMarketTabLabel(text, label)) continue;
+      const area = (node.rect?.width || 0) * (node.rect?.height || 0);
+      const prev = byLabel.get(label);
+      if (!prev || area < prev.area) {
+        byLabel.set(label, { label, area, el: node.el ?? null });
+      }
+    }
+  }
+  return [...byLabel.values()];
 }
 
 function isMarketTabLeafText(text) {
@@ -6523,11 +6553,12 @@ function collectFrameWalkTexts() {
       } catch (_) {}
     };
 
+    const minScore = marketTabContainerMinScore(pageMode);
     const containers = [];
     MARKET_TAB_CONTAINER_SELECTORS.forEach((sel) => {
       queryDeep(sel).forEach((el) => {
         const score = scoreMarketTabBarContainer(el.textContent || "");
-        if (score >= 3) {
+        if (score >= minScore) {
           containers.push({ el, score });
           try {
             const rect = el.getBoundingClientRect();
@@ -6558,13 +6589,54 @@ function collectFrameWalkTexts() {
       }
     }
 
-    return collectMarketTabCandidates(
+    let tabs = collectMarketTabCandidates(
       nodes,
       window.innerHeight,
       window.innerWidth,
       pageMode,
       containerRects
     ).map((tab) => ({ ...tab, el: tab.el }));
+
+    if (tabs.length < 3) {
+      const scanNodes = [];
+      const scanSeen = new Set();
+      const topLimit = marketTabTopLimit(window.innerHeight, pageMode) + 100;
+      for (const label of visitList) {
+        queryDeep("button, [role='tab'], span, a, div, li").forEach((el) => {
+          try {
+            const text = normalizeMarketTabLabel(el.textContent || "");
+            if (!isExactMarketTabLabel(text, label)) return;
+            if (String(el.innerText || "").length > 60) return;
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 12 || rect.height < 6) return;
+            if (!isInLeftMarketColumn(rect, window.innerWidth)) return;
+            if (rect.top < -20 || rect.top > topLimit) return;
+            const dedupe = `${label}|${Math.round(rect.top)}|${Math.round(rect.left)}`;
+            if (scanSeen.has(dedupe)) return;
+            scanSeen.add(dedupe);
+            scanNodes.push({
+              el,
+              text,
+              rect: {
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height,
+                bottom: rect.bottom,
+                right: rect.right,
+              },
+            });
+          } catch (_) {}
+        });
+      }
+      const scanned = pickMarketTabNodesByLabel(scanNodes, visitList).map((tab) => ({
+        ...tab,
+        el: tab.el,
+      }));
+      if (scanned.length > tabs.length) tabs = scanned;
+    }
+
+    return tabs;
   }
 
   async function scrollMarketTabBars() {

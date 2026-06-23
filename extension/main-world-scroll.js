@@ -36,6 +36,8 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     "1º Tempo/2º Tempo",
     "Resultado",
     "Marcadores",
+    "Cartões/Faltas",
+    "Chutes",
     "Jogador a Marcar",
     "Handicap",
     "Odds Asiáticas",
@@ -45,8 +47,9 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
   const MARKET_TAB_CLICK_DELAY_MS = 280;
   const MARKET_TAB_BAND_TOP_PX = 560;
   const MARKET_TAB_BAND_TOP_RATIO = 0.55;
-  const PREMATCH_MARKET_TAB_BAND_TOP_PX = 600;
-  const PREMATCH_MARKET_TAB_BAND_TOP_RATIO = 0.62;
+  const PREMATCH_MARKET_TAB_BAND_TOP_PX = 720;
+  const PREMATCH_MARKET_TAB_BAND_TOP_RATIO = 0.72;
+  const PREMATCH_MARKET_TAB_CONTAINER_MIN_SCORE = 2;
   const MARKET_TAB_LEFT_COLUMN_RATIO = 0.78;
   const MARKET_TAB_LEAF_MAX_TEXT_LEN = 40;
 
@@ -172,7 +175,34 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     if (/\bEscanteios\b/i.test(text)) score += 2;
     if (/\bTodos\b/i.test(text)) score += 2;
     if (/Criar Aposta/i.test(text)) score += 1;
+    if (/Cart[oõ]es\/Faltas/i.test(text)) score += 2;
+    if (/Marcadores/i.test(text)) score += 1;
+    if (/Chutes/i.test(text)) score += 1;
     return score;
+  }
+
+  function marketTabContainerMinScore(pageMode = "auto") {
+    return pageMode === "prematch" ? PREMATCH_MARKET_TAB_CONTAINER_MIN_SCORE : 3;
+  }
+
+  function isExactMarketTabLabel(text, label) {
+    return new RegExp(`^${escapeRegExp(label)}$`, "i").test(normalizeMarketTabLabel(text));
+  }
+
+  function pickMarketTabNodesByLabel(nodes, visitList = []) {
+    const byLabel = new Map();
+    for (const node of nodes) {
+      const text = normalizeMarketTabLabel(node.text);
+      for (const label of visitList) {
+        if (!isExactMarketTabLabel(text, label)) continue;
+        const area = (node.rect?.width || 0) * (node.rect?.height || 0);
+        const prev = byLabel.get(label);
+        if (!prev || area < prev.area) {
+          byLabel.set(label, { label, area, el: node.el ?? null });
+        }
+      }
+    }
+    return [...byLabel.values()];
   }
 
   function isMarketTabLeafText(text) {
@@ -525,11 +555,12 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
       } catch (_) {}
     };
 
+    const minScore = marketTabContainerMinScore(pageMode);
     const containers = [];
     MARKET_TAB_CONTAINER_SELECTORS.forEach((sel) => {
       queryDeep(sel).forEach((el) => {
         const score = scoreMarketTabBarContainer(el.textContent || "");
-        if (score >= 3) {
+        if (score >= minScore) {
           containers.push({ el, score });
           try {
             const rect = el.getBoundingClientRect();
@@ -560,13 +591,54 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
       }
     }
 
-    return collectMarketTabCandidates(
+    let tabs = collectMarketTabCandidates(
       nodes,
       window.innerHeight,
       window.innerWidth,
       pageMode,
       containerRects
     ).map((tab) => ({ ...tab, el: tab.el }));
+
+    if (tabs.length < 3) {
+      const scanNodes = [];
+      const scanSeen = new Set();
+      const topLimit = marketTabTopLimit(window.innerHeight, pageMode) + 100;
+      for (const label of visitList) {
+        queryDeep("button, [role='tab'], span, a, div, li").forEach((el) => {
+          try {
+            const text = normalizeMarketTabLabel(el.textContent || "");
+            if (!isExactMarketTabLabel(text, label)) return;
+            if (String(el.innerText || "").length > 60) return;
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 12 || rect.height < 6) return;
+            if (!isInLeftMarketColumn(rect, window.innerWidth)) return;
+            if (rect.top < -20 || rect.top > topLimit) return;
+            const dedupe = `${label}|${Math.round(rect.top)}|${Math.round(rect.left)}`;
+            if (scanSeen.has(dedupe)) return;
+            scanSeen.add(dedupe);
+            scanNodes.push({
+              el,
+              text,
+              rect: {
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height,
+                bottom: rect.bottom,
+                right: rect.right,
+              },
+            });
+          } catch (_) {}
+        });
+      }
+      const scanned = pickMarketTabNodesByLabel(scanNodes, visitList).map((tab) => ({
+        ...tab,
+        el: tab.el,
+      }));
+      if (scanned.length > tabs.length) tabs = scanned;
+    }
+
+    return tabs;
   }
 
   async function scrollMarketTabBars() {

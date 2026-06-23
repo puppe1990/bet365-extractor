@@ -529,7 +529,7 @@
     return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
   }
 
-  const VERSION = "3.10.31";
+  const VERSION = "3.10.32";
 
   const JUNK_ODDS_SELECTIONS =
     /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -538,7 +538,7 @@
     /^(CA|SUBSTITUIÇÃO\+|Mostrar Mais|Popular|Criar Aposta|Instantâneas|Todos|Ao-Vivo|Jogador\/Contagem|Para Marcar ou Dar Assistência|1°|Jogadores Titulares|Mercado Suspenso|\d+)$/i;
 
   const JUNK_ODDS_MARKETS =
-    /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas|Tênis\b)/i;
+    /^(Escalação|FINALIZAÇÕES|Parceiros|Estat\.|Cronologia|Tabela|Exibir\b|Resultados\b|Configurações|Idioma|Esportes|Notícias de Apostas|Tênis\b|Futebol\s*-\s*Próximos)/i;
 
   const TIMELINE_LEAK_MARKET_RE = /^\d+°\s*(?:Goal|Gol|Escanteio|Impedimento|Cart[aã]o)/i;
 

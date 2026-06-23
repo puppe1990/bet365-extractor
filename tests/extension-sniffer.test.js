@@ -237,6 +237,8 @@ describe("extension sniffer wiring", () => {
     assert.match(source, /expandClicked/);
     assert.match(source, /scrollTargetWithExpand/);
     assert.match(source, /createExpandClickState/);
+    assert.match(source, /isExactMarketTabLabel/);
+    assert.match(source, /pickMarketTabNodesByLabel/);
     assert.match(source, /isMarketCaExpandText/);
     assert.match(source, /Mostrar Mais/);
   });

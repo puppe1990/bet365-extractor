@@ -6,7 +6,10 @@ import {
   MARKET_CATEGORY_TABS_VISIT,
   PREMATCH_MARKET_TABS_VISIT,
   collectMarketTabCandidates,
+  isExactMarketTabLabel,
   gluedMarketTabCount,
+  marketTabContainerMinScore,
+  pickMarketTabNodesByLabel,
   isGluedMarketTabContainer,
   isInLeftMarketColumn,
   isInMarketTabBand,
@@ -162,6 +165,25 @@ describe("bet365 market category tabs", () => {
     );
 
     assert.deepEqual(picked.map((t) => t.label).sort(), ["Jogador a Marcar", "Popular"]);
+  });
+
+  it("faz fallback por rótulo exato quando o container falha", () => {
+    assert.equal(isExactMarketTabLabel("  Escanteios ", "Escanteios"), true);
+    assert.equal(isExactMarketTabLabel("Cartões/Faltas", "Cartões/Faltas"), true);
+    assert.equal(isExactMarketTabLabel("Popular Gols", "Gols"), false);
+    assert.equal(marketTabContainerMinScore("prematch"), 2);
+    const picked = pickMarketTabNodesByLabel(
+      [
+        { text: "Escanteios", rect: { width: 90, height: 24 }, el: {} },
+        { text: "Escanteios", rect: { width: 40, height: 20 }, el: { id: "leaf" } },
+        { text: "Cartões/Faltas", rect: { width: 110, height: 24 }, el: { id: "cards" } },
+      ],
+      ["Escanteios", "Cartões/Faltas"]
+    );
+    assert.equal(picked.find((t) => t.label === "Escanteios")?.el?.id, "leaf");
+    assert.equal(picked.find((t) => t.label === "Cartões/Faltas")?.el?.id, "cards");
+    assert.ok(PREMATCH_MARKET_TABS_VISIT.includes("Cartões/Faltas"));
+    assert.ok(PREMATCH_MARKET_TABS_VISIT.includes("Chutes"));
   });
 
   it("escolhe candidato com menor área por rótulo", () => {
