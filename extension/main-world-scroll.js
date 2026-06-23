@@ -9,6 +9,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     "Jogador a Marcar",
     "Especiais",
     "Odds Asiáticas",
+    "Todos",
     "Escalações",
     "Handicap",
     "Resultado",
@@ -17,6 +18,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
 
   const MARKET_CATEGORY_TABS_VISIT = [
     "Popular",
+    "Todos",
     "Jogador",
     "Gols",
     "Escanteios/Cartões",
@@ -151,6 +153,7 @@ export async function mainWorldMarketScrollFunc(steps = 10) {
     if (/Gols/i.test(text)) score += 1;
     if (/Instant/i.test(text)) score += 1;
     if (/Escanteios\/Cartões/i.test(text)) score += 2;
+    if (/\bTodos\b/i.test(text)) score += 2;
     if (/Criar Aposta/i.test(text)) score += 1;
     return score;
   }

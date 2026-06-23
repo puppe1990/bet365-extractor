@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.14";
+const VERSION = "3.10.15";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -2092,6 +2092,7 @@ const MARKET_CATEGORY_TABS = [
   "Jogador a Marcar",
   "Especiais",
   "Odds Asiáticas",
+  "Todos",
   "Escalações",
   "Handicap",
   "Resultado",
@@ -2100,6 +2101,7 @@ const MARKET_CATEGORY_TABS = [
 
 const MARKET_CATEGORY_TABS_VISIT = [
   "Popular",
+  "Todos",
   "Jogador",
   "Gols",
   "Escanteios/Cartões",
@@ -2234,6 +2236,7 @@ function scoreMarketTabBarContainer(text) {
   if (/Gols/i.test(text)) score += 1;
   if (/Instant/i.test(text)) score += 1;
   if (/Escanteios\/Cartões/i.test(text)) score += 2;
+  if (/\bTodos\b/i.test(text)) score += 2;
   if (/Criar Aposta/i.test(text)) score += 1;
   return score;
 }
@@ -2805,7 +2808,10 @@ function reconcileTimelineCorners(events, sectionLines = [], options = {}) {
   }
 
   const coveredOrdinals = new Set(
-    out.filter((e) => e.type === "corner").map((e) => parseCornerOrdinal(e.description)).filter(Boolean)
+    out
+      .filter((e) => e.type === "corner")
+      .map((e) => parseCornerOrdinal(e.description))
+      .filter(Boolean)
   );
 
   for (let i = 0; i < allLines.length; i++) {
@@ -2815,11 +2821,7 @@ function reconcileTimelineCorners(events, sectionLines = [], options = {}) {
     if (isTimelineMarketLeakLine(line) || isTimelineNoiseDetail(line)) continue;
 
     let minute = findMinuteNearLine(allLines, i);
-    if (
-      minute === 15 &&
-      ordinal === 1 &&
-      out.some((g) => g.type === "goal" && g.minute === 15)
-    ) {
+    if (minute === 15 && ordinal === 1 && out.some((g) => g.type === "goal" && g.minute === 15)) {
       minute = inferMissingCornerMinute(ordinal, out, allLines);
     }
     if (minute === null && ordinal === 1 && hasEight) minute = 8;
@@ -3658,7 +3660,9 @@ function scanNetworkSidePanel(networkLog = []) {
       pushEvent(parseInt(m[1], 10), "corner", m[2], "network-text");
     }
 
-    for (const m of data.matchAll(/(\d+[º°]\s*(?:Escanteio|Corner))[^'|;\n]{0,48}?(\d{1,3})['′]/gi)) {
+    for (const m of data.matchAll(
+      /(\d+[º°]\s*(?:Escanteio|Corner))[^'|;\n]{0,48}?(\d{1,3})['′]/gi
+    )) {
       pushEvent(parseInt(m[2], 10), "corner", m[1], "network-text");
     }
 
