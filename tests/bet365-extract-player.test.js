@@ -12,10 +12,14 @@ import {
   shouldAutoDownloadZipAfterExtract,
   shouldDownloadExtractZip,
   isPageTextReadyForExtract,
+  isPageReadyForExtract,
+  isPageLikelyFailedToLoad,
+  getExtractPlayerStatusMessage,
   isExtractDataReady,
   serializePlayerState,
   parsePlayerState,
   MIN_PAGE_TEXT_FOR_EXTRACT,
+  EXTRACT_RETRY_DELAY_MS,
 } from "../lib/bet365-extract-player.js";
 
 describe("parseIntervalInput", () => {
@@ -66,10 +70,17 @@ describe("defaultBallPosition", () => {
   });
 });
 
-describe("summarizeExtractPreview", () => {
+describe("summarizeExtractPreview ready data", () => {
   it("resume placar e contagens", () => {
     const text = summarizeExtractPreview({
-      match: { homeTeam: "Noruega", awayTeam: "Senegal", score: "3-1", clock: "66:12" },
+      match: {
+        homeTeam: "Noruega",
+        awayTeam: "Senegal",
+        score: "3-1",
+        clock: "66:12",
+        scoreConfidence: "high",
+      },
+      meta: { visibleTextLength: 120_000 },
       stats: [{}, {}],
       odds: [{}, {}, {}],
       sidePanel: { timeline: [{}, {}] },
@@ -88,9 +99,54 @@ describe("isPageTextReadyForExtract", () => {
     assert.equal(isPageTextReadyForExtract("Noruega v Senegal"), false);
   });
 
+  it("rejeita shell da bet365 sem times no cabeçalho", () => {
+    const text = `${"x".repeat(MIN_PAGE_TEXT_FOR_EXTRACT)} Ao-Vivo Cassino Promoções Resultado Final`;
+    assert.equal(isPageTextReadyForExtract(text), false);
+  });
+
   it("aceita página com mercados visíveis", () => {
     const text = `${"x".repeat(MIN_PAGE_TEXT_FOR_EXTRACT)} Noruega v Senegal Resultado Final`;
     assert.equal(isPageTextReadyForExtract(text), true);
+  });
+});
+
+describe("isPageReadyForExtract", () => {
+  it("exige DOM de mercados quando informado", () => {
+    const text = `${"x".repeat(MIN_PAGE_TEXT_FOR_EXTRACT)} Noruega v Senegal Resultado Final`;
+    assert.equal(isPageReadyForExtract(text, { hasMarketDom: true }), true);
+    assert.equal(isPageReadyForExtract(text, { hasMarketDom: false }), false);
+  });
+});
+
+describe("isPageLikelyFailedToLoad", () => {
+  it("detecta página escura sem mercados nem times", () => {
+    assert.equal(
+      isPageLikelyFailedToLoad("Ao-Vivo\nCassino\nPromoções", { hasMarketDom: false }),
+      true
+    );
+  });
+
+  it("não marca jogo válido como falha", () => {
+    const text = `${"x".repeat(MIN_PAGE_TEXT_FOR_EXTRACT)} Noruega v Senegal Resultado Final`;
+    assert.equal(isPageLikelyFailedToLoad(text, { hasMarketDom: true }), false);
+  });
+});
+
+describe("getExtractPlayerStatusMessage", () => {
+  it("orienta recarregar quando a página falhou", () => {
+    assert.match(getExtractPlayerStatusMessage({ failed: true }), /F5/);
+  });
+});
+
+describe("summarizeExtractPreview", () => {
+  it("não mostra lixo quando extract está vazio", () => {
+    const text = summarizeExtractPreview({
+      match: { homeTeam: "7", awayTeam: "7" },
+      meta: { visibleTextLength: 1500 },
+      odds: [],
+      stats: [],
+    });
+    assert.equal(text, "Aguardando jogo carregar…");
   });
 });
 
@@ -234,5 +290,17 @@ describe("createExtractPlayerScheduler", () => {
     scheduler.markExtractStart(0);
 
     assert.equal(scheduler.tick(60_000).action, "none");
+  });
+
+  it("reagenda rápido quando extract falha", () => {
+    const scheduler = createExtractPlayerScheduler();
+    scheduler.setIntervalInput("60");
+    scheduler.start(0);
+    scheduler.tick(0);
+    scheduler.markExtractStart(0);
+    scheduler.markExtractEnd(0, { advanceInterval: false });
+
+    assert.equal(scheduler.tick(EXTRACT_RETRY_DELAY_MS - 1).action, "wait");
+    assert.equal(scheduler.tick(EXTRACT_RETRY_DELAY_MS).action, "extract");
   });
 });

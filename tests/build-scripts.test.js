@@ -70,6 +70,8 @@ describe("build output", () => {
     assert.match(source, /isCornerMarketTabKey/);
     assert.match(source, /isPageTextReadyForExtract/);
     assert.match(source, /shouldDownloadExtractZip/);
+    assert.match(source, /isPageLikelyFailedToLoad/);
+    assert.match(source, /isPageReadyForExtract/);
   });
 
   it("extension/dist/zip-utils.js expõe buildZipEntries", () => {

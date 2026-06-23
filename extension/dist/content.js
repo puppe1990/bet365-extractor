@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.27";
+const VERSION = "3.10.28";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -4828,8 +4828,10 @@ function scoreSidePanelTabContent(text, key) {
 
 const MIN_EXTRACT_PLAYER_INTERVAL_MS = 30_000;
 const MIN_PAGE_TEXT_FOR_EXTRACT = 3_000;
+const EXTRACT_RETRY_DELAY_MS = 5_000;
 const PAGE_READY_MARKET_RE =
   /\b(?:Resultado Final|Partida\s*-\s*Gols|Escanteios\/Cartões|Chance Dupla|Marcadores de Gol)\b/i;
+const PAGE_READY_TEAMS_RE = /\b[A-Za-zÀ-ú]{2,}(?:\s+[A-Za-zÀ-ú.'-]+)*\s+v\s+[A-Za-zÀ-ú]/i;
 const EXTRACT_PLAYER_STORAGE_KEY = "bet365-extract-player-state";
 const EXTRACT_PLAYER_BALL_SIZE_PX = 72;
 
@@ -4891,7 +4893,35 @@ function shouldAutoDownloadZipAfterExtract(options = {}) {
 function isPageTextReadyForExtract(visibleText = "") {
   const text = String(visibleText || "");
   if (text.length < MIN_PAGE_TEXT_FOR_EXTRACT) return false;
-  return PAGE_READY_MARKET_RE.test(text);
+  if (!PAGE_READY_MARKET_RE.test(text)) return false;
+  if (!PAGE_READY_TEAMS_RE.test(text)) return false;
+  return true;
+}
+
+function isPageReadyForExtract(visibleText = "", options = {}) {
+  if (!isPageTextReadyForExtract(visibleText)) return false;
+  if (options.hasMarketDom === false) return false;
+  return true;
+}
+
+function isPageLikelyFailedToLoad(visibleText = "", options = {}) {
+  const text = String(visibleText || "");
+  const hasMarketDom = options.hasMarketDom;
+  const hasTeams = PAGE_READY_TEAMS_RE.test(text);
+  const hasMarkets = PAGE_READY_MARKET_RE.test(text);
+
+  if (hasMarketDom === false && text.length > 0) return true;
+  if (text.length >= MIN_PAGE_TEXT_FOR_EXTRACT && !hasTeams && !hasMarkets) return true;
+  return false;
+}
+
+function getExtractPlayerStatusMessage(context = {}) {
+  if (context.extracting) return "Extraindo…";
+  if (context.failed) return "Página não carregou — F5";
+  if (context.awaitingData) return "Aguardando dados…";
+  if (context.awaitingPage) return "Aguardando jogo…";
+  if (context.running) return "Ativo";
+  return "Pausado";
 }
 
 function isExtractDataReady(data = {}) {
@@ -4917,6 +4947,9 @@ function shouldDownloadExtractZip(data = {}, options = {}) {
 }
 
 function summarizeExtractPreview(data = {}) {
+  if (!isExtractDataReady(data)) {
+    return "Aguardando jogo carregar…";
+  }
   const m = data.match || {};
   const home = m.homeTeam || "?";
   const away = m.awayTeam || "?";
@@ -4971,9 +5004,19 @@ function createExtractPlayerScheduler(options = {}) {
       lastRunAt = now;
       return this.getState();
     },
-    markExtractEnd(now) {
+    markExtractEnd(now, options = {}) {
       extracting = false;
-      if (running) nextRunAt = now + intervalMs;
+      if (running) {
+        const delayMs =
+          options.advanceInterval === false
+            ? Math.max(1_000, Number(options.retryDelayMs || EXTRACT_RETRY_DELAY_MS))
+            : intervalMs;
+        nextRunAt = now + delayMs;
+      }
+      return this.getState();
+    },
+    deferNextRun(now, delayMs = EXTRACT_RETRY_DELAY_MS) {
+      if (running) nextRunAt = now + Math.max(1_000, Number(delayMs || EXTRACT_RETRY_DELAY_MS));
       return this.getState();
     },
     tick(now) {
@@ -6903,9 +6946,28 @@ function collectFrameWalkTexts() {
   let tabId = options.tabId ?? null;
   let drag = null;
   let tickTimer = null;
-  const getPageVisibleText = options.getPageVisibleText || (() => document.body?.innerText || "");
-  const isPageReady =
-    options.isPageReady || (() => isPageTextReadyForExtract(getPageVisibleText()));
+  const getPageVisibleText =
+    options.getPageVisibleText || (() => document.body?.innerText || document.documentElement?.innerText || "");
+  const hasMarketDom =
+    options.hasMarketDom ||
+    (() =>
+      Boolean(
+        document.querySelector(
+          '[class*="MarketGroup"], [class*="CouponPage"], [class*="IPMarketView"], [class*="EventViewDetail"], [class*="ipe-EventView"]'
+        )
+      ));
+  const getPageReadyContext = () => ({
+    text: getPageVisibleText(),
+    hasMarketDom: hasMarketDom(),
+  });
+  const isPageReady = options.isPageReady || (() => {
+    const ctx = getPageReadyContext();
+    return isPageReadyForExtract(ctx.text, { hasMarketDom: ctx.hasMarketDom });
+  });
+  const isPageFailed = options.isPageFailed || (() => {
+    const ctx = getPageReadyContext();
+    return isPageLikelyFailedToLoad(ctx.text, { hasMarketDom: ctx.hasMarketDom });
+  });
   const RESTORE_FIRST_RUN_DELAY_MS = 8_000;
 
   const root = document.createElement("div");
@@ -6951,6 +7013,9 @@ function collectFrameWalkTexts() {
 #bet365-extract-player-root .bet365-player-ball:active { cursor: grabbing; }
 #bet365-extract-player-root .bet365-player-ball.is-running {
   box-shadow: 0 0 0 3px rgba(16, 185, 129, .55), inset 0 -4px 10px rgba(0,0,0,.25);
+}
+#bet365-extract-player-root .bet365-player-ball.is-waiting-page {
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, .65), inset 0 -4px 10px rgba(0,0,0,.25);
 }
 #bet365-extract-player-root .bet365-player-panel {
   width: 240px;
@@ -7108,12 +7173,19 @@ function collectFrameWalkTexts() {
     applyPosition(pos);
   }
 
-  function syncToggleUi() {
+  function syncToggleUi(context = {}) {
     const { running, extracting } = scheduler.getState();
     ball.classList.toggle("is-running", running);
+    ball.classList.toggle("is-waiting-page", running && (context.failed || context.awaitingPage));
     toggleBtn.textContent = running ? "⏸ Pausar" : "▶ Iniciar";
     toggleBtn.className = running ? "bet365-btn-stop" : "bet365-btn-play";
-    statusEl.textContent = extracting ? "Extraindo…" : running ? "Ativo" : "Pausado";
+    statusEl.textContent = getExtractPlayerStatusMessage({
+      extracting: context.extracting ?? extracting,
+      running,
+      failed: context.failed,
+      awaitingPage: context.awaitingPage,
+      awaitingData: context.awaitingData,
+    });
   }
 
   function updateCountdown(now = Date.now()) {
@@ -7122,8 +7194,10 @@ function collectFrameWalkTexts() {
       countdownEl.textContent = "Próxima: —";
       return tick;
     }
-    if (tick.action === "extract" && !isPageReady()) {
-      countdownEl.textContent = "Próxima: aguardando página";
+    if (!isPageReady()) {
+      countdownEl.textContent = isPageFailed()
+        ? "Próxima: recarregue F5"
+        : "Próxima: aguardando página";
     } else if (tick.action === "extract") {
       countdownEl.textContent = "Próxima: agora";
     } else if (tick.countdownMs != null) {
@@ -7167,32 +7241,37 @@ function collectFrameWalkTexts() {
   async function runExtract() {
     if (scheduler.getState().extracting) return;
     if (!isPageReady()) {
-      statusEl.textContent = "Aguardando jogo…";
+      const failed = isPageFailed();
+      previewEl.textContent = failed
+        ? "Bet365 não exibiu o jogo. Recarregue a página (F5)."
+        : "Aguardando jogo carregar…";
+      syncToggleUi({ failed, awaitingPage: !failed });
       return;
     }
     scheduler.markExtractStart(Date.now());
-    syncToggleUi();
-    statusEl.textContent = "Extraindo…";
+    syncToggleUi({ extracting: true });
+    let extractSucceeded = false;
     try {
       const id = await resolveTabId();
       const data = await buildDataFn(id);
-      previewEl.textContent = summarizeExtractPreview(data);
       if (!isExtractDataReady(data)) {
-        statusEl.textContent = "Aguardando dados…";
+        previewEl.textContent = summarizeExtractPreview(data);
+        syncToggleUi({ awaitingData: true });
         return;
       }
+      extractSucceeded = true;
       lastData = data;
+      previewEl.textContent = summarizeExtractPreview(data);
       if (shouldDownloadExtractZip(data, { autoDownloadZip })) {
+        syncToggleUi({ extracting: true });
         statusEl.textContent = "ZIP…";
         await downloadZip(data);
         statusEl.textContent = "ZIP ok";
-      } else {
-        statusEl.textContent = "OK";
       }
     } catch (err) {
       statusEl.textContent = String(err?.message || err).slice(0, 80);
     } finally {
-      scheduler.markExtractEnd(Date.now());
+      scheduler.markExtractEnd(Date.now(), { advanceInterval: extractSucceeded });
       syncToggleUi();
       saveState();
     }
@@ -7202,7 +7281,11 @@ function collectFrameWalkTexts() {
     const tick = updateCountdown();
     if (tick.action === "extract") await runExtract();
     else if (scheduler.getState().running && !isPageReady()) {
-      statusEl.textContent = "Aguardando jogo…";
+      const failed = isPageFailed();
+      previewEl.textContent = failed
+        ? "Bet365 não exibiu o jogo. Recarregue a página (F5)."
+        : "Aguardando jogo carregar…";
+      syncToggleUi({ failed, awaitingPage: !failed });
     }
   }
 
