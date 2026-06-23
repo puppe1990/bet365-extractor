@@ -9,6 +9,11 @@ import {
   mergeTimelineSectionTexts,
   buildTimelineFromPanelTexts,
   reconcileTimelineCorners,
+  reconcileTimelineGoals,
+  parseGoalScorersFromText,
+  parseGoalsFromScoreboardText,
+  parseGoalsFromPlayerFinalizations,
+  collectScoreboardHintText,
   parseCornerTimelineHintsFromText,
   parseEscanteiosCountFromStatsText,
   parseCornerOrdinal,
@@ -93,6 +98,75 @@ describe("reconcileTimelineCorners", () => {
   });
 });
 
+describe("reconcileTimelineGoals", () => {
+  it("recupera gol ausente via placar quando cronologia não tem goal", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-norway-no-goal.txt"));
+    const out = reconcileTimelineGoals(events, {
+      match: { score: "1-0", scoreHome: 1, scoreAway: 0 },
+      scoreboardText: readFixture("side-panel-scoreboard-norway-goal.txt"),
+      playerFinalizations: [
+        { player: "K Koulibaly", shots: "0", onTarget: "1", source: "visible-text" },
+      ],
+    });
+    const goal = out.find((e) => e.type === "goal");
+
+    assert.ok(goal);
+    assert.match(goal.description, /1° Goal/);
+    assert.match(goal.description, /K Koulibaly/);
+    assert.equal(goal.source, "scoreboard-inferred");
+    assert.equal(out.filter((e) => e.type === "corner").length, 5);
+  });
+
+  it("parseia marcadores com minuto do jogador", () => {
+    const goals = parseGoalScorersFromText(readFixture("side-panel-goal-scorers.txt"));
+
+    assert.equal(goals.length, 2);
+    assert.equal(goals[0].player, "Kylian Mbappe");
+    assert.equal(goals[0].minute, 12);
+    assert.equal(goals[1].player, "Ousmane Dembele");
+    assert.equal(goals[1].minute, 25);
+  });
+
+  it("parseia marcador do placar sem minuto de gol", () => {
+    const goals = parseGoalsFromScoreboardText(
+      readFixture("side-panel-scoreboard-norway-goal.txt")
+    );
+
+    assert.equal(goals.length, 1);
+    assert.equal(goals[0].player, "K Koulibaly");
+    assert.equal(goals[0].minute, null);
+  });
+
+  it("usa finalizações como pista quando há um único jogador com gol", () => {
+    const goals = parseGoalsFromPlayerFinalizations([
+      { player: "K Koulibaly", shots: "0", onTarget: "1" },
+      { player: "E Haaland", shots: "0", onTarget: "2" },
+    ]);
+
+    assert.equal(goals.length, 0);
+    const single = parseGoalsFromPlayerFinalizations([
+      { player: "K Koulibaly", shots: "0", onTarget: "1" },
+    ]);
+    assert.equal(single[0].player, "K Koulibaly");
+  });
+
+  it("coleta texto do domProbe de scoreboard", () => {
+    const text = collectScoreboardHintText(
+      [
+        {
+          source: "dom-scoreboard",
+          samples: ["Noruega 1 0 Senegal 49:40 K Koulibaly GOL"],
+        },
+        { source: "dom", samples: ["ignored"] },
+      ],
+      ["extra"]
+    );
+
+    assert.match(text, /K Koulibaly/);
+    assert.match(text, /extra/);
+  });
+});
+
 describe("buildTimelineFromPanelTexts", () => {
   it("combina cronologia e stats escanteios para inferir 1° escanteio ausente", () => {
     const timeline = buildTimelineFromPanelTexts({
@@ -109,6 +183,24 @@ describe("buildTimelineFromPanelTexts", () => {
     assert.ok(first);
     assert.equal(first.minute, 8);
     assert.equal(first.source, "stats-inferred");
+  });
+
+  it("infere gol ausente com placar 1-0 e cronologia só com escanteios", () => {
+    const timeline = buildTimelineFromPanelTexts(
+      { timeline: readFixture("side-panel-timeline-norway-no-goal.txt") },
+      {
+        match: { score: "1-0", scoreHome: 1, scoreAway: 0 },
+        scoreboardText: readFixture("side-panel-scoreboard-norway-goal.txt"),
+        playerFinalizations: [
+          { player: "K Koulibaly", shots: "0", onTarget: "1", source: "visible-text" },
+        ],
+      }
+    );
+    const goal = timeline.find((e) => e.type === "goal");
+
+    assert.ok(goal);
+    assert.match(goal.description, /K Koulibaly/);
+    assert.equal(timeline.filter((e) => e.type === "goal").length, 1);
   });
 });
 

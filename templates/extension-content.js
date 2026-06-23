@@ -1503,6 +1503,14 @@
       location.href,
       { headerText: pageText, domHeader }
     );
+    sidePanel.timeline = reconcileTimelineGoals(sidePanel.timeline, {
+      match,
+      marcadoresText: textByTab.statsSubTabs?.marcadores,
+      goalScorersText: textByTab.goalScorers,
+      scoreboardText: collectScoreboardHintText(domProbe, [pageText]),
+      playerFinalizations: sidePanel.playerFinalizations,
+    });
+    meta.sidePanelTimelineCount = sidePanel.timeline.length;
     pipeline.push({
       step: "marketInference",
       ok: inference.applied,

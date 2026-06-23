@@ -529,7 +529,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.5";
+const VERSION = "3.10.17";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -2118,10 +2118,7 @@ function buildBet365Slug(data) {
 
 function slugifyClockPart(clock) {
   if (!clock) return "sem-tempo";
-  const normalized = String(clock)
-    .trim()
-    .replace(/:/g, "-")
-    .replace(/\+/g, "mais");
+  const normalized = String(clock).trim().replace(/:/g, "-").replace(/\+/g, "mais");
   return slugifyFilenamePart(normalized) || "sem-tempo";
 }
 
