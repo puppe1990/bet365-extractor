@@ -198,6 +198,16 @@ describe("parseTimelineFromText", () => {
     assert.equal(events.filter((e) => e.type === "corner").length, 2);
   });
 
+  it("ignora Primeiro a Marcar e Sem N° gol vazando na cronologia", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-instant-leak-89.txt"));
+
+    assert.ok(!events.some((e) => /Primeiro a Marcar/i.test(e.description)));
+    assert.ok(!events.some((e) => /Sem 4[º°]?\s*gol/i.test(e.description)));
+    assert.ok(!events.some((e) => e.type === "goal" && e.minute === 60));
+    assert.equal(events.filter((e) => e.type === "corner" && e.minute === 66).length, 2);
+    assert.equal(events.find((e) => e.type === "goal")?.minute, 15);
+  });
+
   it("separa gol e substituição quando o minuto do gol vem depois no DOM", () => {
     const events = parseTimelineFromText(readFixture("side-panel-timeline-france-iraq.txt"));
     const goal = events.find((e) => e.type === "goal");

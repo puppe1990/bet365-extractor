@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.15";
+const VERSION = "3.10.16";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -2988,13 +2988,24 @@ function isTimelineMarketLeakLine(line) {
   if (!s) return false;
   if (/^Próximo Minuto/i.test(s)) return true;
   if (/^Gol\s*\|\s*Escanteio/i.test(s)) return true;
+  if (/Primeiro a Marcar/i.test(s)) return true;
   if (/2[º°]\s*Gol\s*-\s*Método/i.test(s)) return true;
-  if (/Sem\s+2[º°]?\s*gol/i.test(s)) return true;
+  if (/Sem\s+\d+[º°]?\s*gol/i.test(s)) return true;
+  if (/^\d+[º°]\s*Gol$/i.test(s)) return true;
   if (/Hora do \d/i.test(s)) return true;
   if (/Gol antes do minuto/i.test(s)) return true;
   if (/Sem Gol antes do minuto/i.test(s)) return true;
   const pipes = (s.match(/\|/g) || []).length;
   if (pipes >= 3 && /Gol|Escanteio|Cart[aã]o|P[eê]nalti|M[eé]todo|Gol Contra/i.test(s)) {
+    return true;
+  }
+  return false;
+}
+
+function isTimelineFakeOrdinalGoal(details) {
+  const text = details.join(" | ");
+  if (/Sem\s+\d+[º°]?\s*gol/i.test(text)) return true;
+  if (/^\d+[º°]\s*Gol$/i.test(normalize(details[0] || "")) && !/Chute|Assist|Goal/i.test(text)) {
     return true;
   }
   return false;
@@ -3056,6 +3067,7 @@ function shouldKeepTimelineEvent(details) {
   const description = details.join(" | ");
   if (isTimelineMarketLeakLine(description)) return false;
   if (details.some((d) => isTimelineMarketLeakLine(d))) return false;
+  if (inferTimelineType(details) === "goal" && isTimelineFakeOrdinalGoal(details)) return false;
   const type = inferTimelineType(details);
   if (type !== "event") return true;
   return details.some((d) => TIMELINE_EVENT_RE.test(d));
