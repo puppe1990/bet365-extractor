@@ -205,6 +205,15 @@ describe("reconcileTimelineGoals", () => {
     assert.equal(goal.source, "scoreboard-inferred");
   });
 
+  it("rejeita nomes colados da escalação no parser de placar", () => {
+    const goals = parseGoalsFromScoreboardText(
+      "2' O Nyland E Mendy D Wolfe E Diouf 43' M Pedersen 43'"
+    );
+
+    assert.ok(!goals.some((g) => /Nyland/.test(g.player)));
+    assert.equal(goals.find((g) => g.player === "M Pedersen")?.minute, 43);
+  });
+
   it("parseia minuto do gol a partir de odds 1° Gol", () => {
     const goals = parseGoalsFromOdds([
       { market: "1° Gol", selection: "M Pedersen", odds: 43 },

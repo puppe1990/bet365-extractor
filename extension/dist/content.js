@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.18";
+const VERSION = "3.10.19";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -2885,6 +2885,7 @@ function makeGoalEvent(minute, ordinal, player, source, extra = "") {
 function isLikelyScorerName(name) {
   const s = normalize(name);
   if (!s || s.length > 40) return false;
+  if (s.split(/\s+/).length > 4) return false;
   if (GOAL_SCORER_JUNK_RE.test(s)) return false;
   if (NETWORK_NAME_BLOCK_RE.test(s)) return false;
   if (/^(Noruega|Senegal|França|France|Iraque|Iraq|Argentina|Áustria|Austria|Empate)$/i.test(s)) {
@@ -6047,7 +6048,7 @@ function collectFrameWalkTexts() {
       match,
       marcadoresText: textByTab.statsSubTabs?.marcadores,
       goalScorersText: textByTab.goalScorers,
-      scoreboardText: collectScoreboardHintText(domProbe, [pageText]),
+      scoreboardText: collectScoreboardHintText(domProbe),
       playerFinalizations: sidePanel.playerFinalizations,
       odds,
     });

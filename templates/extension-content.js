@@ -1507,7 +1507,7 @@
       match,
       marcadoresText: textByTab.statsSubTabs?.marcadores,
       goalScorersText: textByTab.goalScorers,
-      scoreboardText: collectScoreboardHintText(domProbe, [pageText]),
+      scoreboardText: collectScoreboardHintText(domProbe),
       playerFinalizations: sidePanel.playerFinalizations,
       odds,
     });
