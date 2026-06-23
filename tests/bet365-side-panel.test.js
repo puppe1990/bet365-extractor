@@ -249,6 +249,57 @@ describe("reconcileTimelineGoals", () => {
     assert.equal(goals[0].source, "odds-inferred");
   });
 
+  it("rejeita odds altas de 1° Gol como minuto falso", () => {
+    const goals = parseGoalsFromOdds([
+      { market: "1° Gol", selection: "E Diouf", odds: 55 },
+      { market: "1° Gol", selection: "E Haaland", odds: 58 },
+      { market: "1° Gol", selection: "M Pedersen", odds: 43 },
+    ]);
+
+    assert.equal(goals.length, 1);
+    assert.equal(goals[0].player, "M Pedersen");
+    assert.equal(goals[0].minute, 43);
+  });
+
+  it("parseia múltiplos gols do placar 3-1 Noruega-Senegal", () => {
+    const goals = parseGoalsFromScoreboardText(readFixture("side-panel-scoreboard-norway-3-1.txt"));
+
+    assert.deepEqual(
+      goals.map((g) => `${g.minute}:${g.player}`),
+      ["43:M Pedersen", "48:E Haaland", "53:I Sarr", "58:E Haaland"]
+    );
+  });
+
+  it("não duplica Sarr 53' nem inventa Diouf no reconcile 3-1", () => {
+    const events = [
+      {
+        minute: 53,
+        type: "goal",
+        description: "3° Goal | Sarr - Chute | Mane - Assist",
+        source: "visible-text",
+      },
+      { minute: 17, type: "corner", description: "5° Escanteio", source: "visible-text" },
+    ];
+    const scoreboard = readFixture("side-panel-scoreboard-norway-3-1.txt");
+    const out = reconcileTimelineGoals(events, {
+      match: { score: "3-1", scoreHome: 3, scoreAway: 1 },
+      scoreboardText: scoreboard,
+      odds: [
+        { market: "1° Gol", selection: "E Diouf", odds: 55 },
+        { market: "1° Gol", selection: "I Sarr", odds: 53 },
+        { market: "1° Gol", selection: "M Pedersen", odds: 43 },
+      ],
+    });
+    const goals = out.filter((e) => e.type === "goal");
+
+    assert.equal(goals.length, 4);
+    assert.equal(goals.filter((g) => g.minute === 53).length, 1);
+    assert.ok(goals.some((g) => g.minute === 43 && /Pedersen/.test(g.description)));
+    assert.ok(goals.some((g) => g.minute === 48 && /Haaland/.test(g.description)));
+    assert.ok(goals.some((g) => g.minute === 58 && /Haaland/.test(g.description)));
+    assert.ok(!goals.some((g) => /Diouf/.test(g.description)));
+  });
+
   it("enriquece gol com Chute e Assist da cronologia", () => {
     const hint = { player: "M Pedersen", minute: 43, source: "scoreboard-inferred" };
     const timeline = ["46'", "1° Goal", "M Pedersen - Chute", "E Haaland - Assist"].join("\n");

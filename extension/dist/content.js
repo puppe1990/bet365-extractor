@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.22";
+const VERSION = "3.10.23";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -2888,10 +2888,8 @@ function reconcileTimelineCorners(events, sectionLines = [], options = {}) {
 const GOAL_ORDINAL_RE = /^(\d+)[º°]\s*(?:Goal|Gol)/i;
 const SCOREBOARD_CLOCK_SCORER_RE =
   /\b\d{1,2}:\d{2}\s+([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30})\s+(?:GOL(?:GOL)+|GOL\b)/i;
-const SCOREBOARD_MINUTE_SCORER_RE =
-  /\b(\d{1,3})['′]\s+([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30})(?=\s|$)/g;
-const SCOREBOARD_SCORER_MINUTE_RE =
-  /\b([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30})\s+(\d{1,3})['′](?:\s|$)/g;
+const SCOREBOARD_SCORER_MINUTES_RE =
+  /\b([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30})\s+((?:\d{1,3}['′]\s*,\s*)*\d{1,3}['′])/gi;
 const GOAL_SCORER_JUNK_RE =
   /^(Jogadores Titulares|Mostrar Mais|SUBSTITUIÇÃO\+|A Qualquer Momento|Para Marcar|Marcadores|Resultado Correto|Jogador a Marcar)$/i;
 const GOAL_ODDS_MINUTE_RE = /^(\d{1,2})(?:\.0+)?$/;
@@ -2899,6 +2897,53 @@ const GOAL_ODDS_MINUTE_RE = /^(\d{1,2})(?:\.0+)?$/;
 function parseGoalOrdinal(text) {
   const m = normalize(text).match(GOAL_ORDINAL_RE);
   return m ? parseInt(m[1], 10) : null;
+}
+
+function goalPlayerSurname(value = "") {
+  const text = String(value || "");
+  const name = text
+    .split("|")
+    .map((part) => part.trim())
+    .find((part) => part && !/^\d+[º°]\s*Goal/i.test(part))
+    ?.replace(/\s*-\s*(Chute|Cabeçada|Pênalti|Assist).*$/i, "")
+    .trim();
+  return (name || text).split(/\s+/).pop()?.toLowerCase() || "";
+}
+
+function goalEventMatchesHint(event, hint = {}) {
+  if (event?.type !== "goal" || !Number.isFinite(hint?.minute) || !hint?.player) return false;
+  if (event.minute !== hint.minute) return false;
+  return goalPlayerSurname(event.description) === goalPlayerSurname(hint.player);
+}
+
+function dedupeTimelineGoals(events) {
+  const goals = [];
+  const others = [];
+
+  for (const event of events) {
+    if (event.type !== "goal") {
+      others.push(event);
+      continue;
+    }
+    const duplicate = goals.find(
+      (g) =>
+        g.minute === event.minute &&
+        goalPlayerSurname(g.description) === goalPlayerSurname(event.description)
+    );
+    if (duplicate) {
+      const prefer =
+        event.source === "visible-text" ||
+        (duplicate.source !== "visible-text" && event.source === "scoreboard-inferred");
+      if (prefer) {
+        const idx = goals.indexOf(duplicate);
+        goals[idx] = event;
+      }
+      continue;
+    }
+    goals.push(event);
+  }
+
+  return [...others, ...goals];
 }
 
 function makeGoalEvent(minute, ordinal, player, source, extras = {}) {
@@ -3015,17 +3060,28 @@ function parseGoalsFromScoreboardText(text) {
   if (clockMatch) pushGoal(null, clockMatch[1], "scoreboard-inferred");
 
   let m;
-  const minuteFirst = new RegExp(SCOREBOARD_MINUTE_SCORER_RE.source, "gi");
-  while ((m = minuteFirst.exec(flat)) !== null) {
-    pushGoal(parseInt(m[1], 10), m[2], "scoreboard-inferred");
+  const playerMinutes = new RegExp(SCOREBOARD_SCORER_MINUTES_RE.source, "gi");
+  while ((m = playerMinutes.exec(flat)) !== null) {
+    const minutes = [...String(m[2]).matchAll(/(\d{1,3})['′]/g)].map((hit) => parseInt(hit[1], 10));
+    const prefix = String(m[0])
+      .slice(0, Math.max(0, String(m[0]).indexOf(String(m[2]))))
+      .trim();
+    const words = prefix.split(/\s+/).filter(Boolean);
+    let player = null;
+    for (let len = Math.min(4, words.length); len >= 1; len--) {
+      const candidate = words.slice(-len).join(" ");
+      if (isLikelyScorerName(candidate)) {
+        player = candidate;
+        break;
+      }
+    }
+    if (!player) continue;
+    for (const minute of minutes) {
+      pushGoal(minute, player, "scoreboard-inferred");
+    }
   }
 
-  const playerFirst = new RegExp(SCOREBOARD_SCORER_MINUTE_RE.source, "gi");
-  while ((m = playerFirst.exec(flat)) !== null) {
-    pushGoal(parseInt(m[2], 10), m[1], "scoreboard-inferred");
-  }
-
-  return goals;
+  return goals.sort((a, b) => (a.minute ?? 999) - (b.minute ?? 999));
 }
 
 function parseGoalsFromOdds(odds = []) {
@@ -3044,7 +3100,10 @@ function parseGoalsFromOdds(odds = []) {
     if (!minuteMatch) continue;
 
     const minute = parseInt(minuteMatch[1], 10);
+    const oddNum = parseFloat(String(row.odds ?? "").replace(",", "."));
     if (minute < 1 || minute > 120) continue;
+    if (Number.isFinite(oddNum) && isLikelyMinuteAsOdd(oddNum, market, player)) continue;
+    if (/^\d+[º°]\s*Gol$/i.test(market) && Number.isFinite(oddNum) && oddNum >= 51) continue;
 
     goals.push({
       minute,
@@ -3143,16 +3202,26 @@ function reconcileTimelineGoals(events, options = {}) {
   );
   const hints = gatherGoalRecoveryHints(options);
   const usedHints = new Set();
+  const hintAlreadyCovered = (hint) =>
+    hint && out.some((event) => goalEventMatchesHint(event, hint));
 
   for (let ordinal = 1; ordinal <= expected; ordinal++) {
     if (coveredOrdinals.has(ordinal)) continue;
     if (out.filter((e) => e.type === "goal").length >= expected) break;
 
     const hint =
-      hints.find((h) => h.ordinal === ordinal && !usedHints.has(h)) ||
-      hints.find((h) => !usedHints.has(h) && Number.isFinite(h.minute)) ||
-      hints.find((h) => !usedHints.has(h));
+      hints.find(
+        (h) => h.ordinal === ordinal && !usedHints.has(h) && !hintAlreadyCovered(h)
+      ) ||
+      hints.find(
+        (h) => !usedHints.has(h) && Number.isFinite(h.minute) && !hintAlreadyCovered(h)
+      ) ||
+      hints.find((h) => !usedHints.has(h) && !hintAlreadyCovered(h));
     if (hint) usedHints.add(hint);
+    if (hintAlreadyCovered(hint)) {
+      coveredOrdinals.add(ordinal);
+      continue;
+    }
 
     const enriched = enrichGoalHint(hint || {}, out, [
       options.timelineText,
@@ -3173,7 +3242,7 @@ function reconcileTimelineGoals(events, options = {}) {
     coveredOrdinals.add(ordinal);
   }
 
-  return stripGoalAbsorbedTimelineEvents(dedupeTimelineEvents(out));
+  return stripGoalAbsorbedTimelineEvents(dedupeTimelineGoals(dedupeTimelineEvents(out)));
 }
 
 const PLAYER_SHORT_NAME_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;
@@ -3426,7 +3495,9 @@ function dedupeTimelineEvents(events) {
 }
 
 function goalDetailToken(description = "") {
-  const parts = String(description).split("|").map((p) => p.trim());
+  const parts = String(description)
+    .split("|")
+    .map((p) => p.trim());
   for (const part of parts) {
     const shot = part.match(/^(.+?)\s*-\s*(Chute|Cabeçada|Pênalti)$/i);
     if (shot) {
@@ -3454,9 +3525,7 @@ function stripGoalAbsorbedTimelineEvents(events) {
     if (!shot) return true;
     const surname = shot[1].trim().split(/\s+/).pop().toLowerCase();
     const method = shot[2].toLowerCase();
-    return !absorbed.some(
-      (g) => g.surname === surname && (!g.method || g.method === method)
-    );
+    return !absorbed.some((g) => g.surname === surname && (!g.method || g.method === method));
   });
 }
 
@@ -3909,9 +3978,7 @@ function extractGoalScorersSectionFromText(text) {
     if (!/^Marcadores de Gols?$/i.test(lines[i])) continue;
     const chunk = lines.slice(i, Math.min(lines.length, i + 120)).join("\n");
     if (/\nMarcadores\n/i.test(chunk) && /\d{1,3}['′]\s*$/m.test(chunk)) return chunk;
-    if (
-      /\n[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,28}\n\d{1,3}['′]\s*$/m.test(chunk)
-    ) {
+    if (/\n[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,28}\n\d{1,3}['′]\s*$/m.test(chunk)) {
       return chunk;
     }
   }
@@ -4098,8 +4165,7 @@ function extractSidePanelFromTexts(textByTab = {}, options = {}) {
     .join("\n");
   const playerText = textByTab.playerStats || "";
   const timelineText = textByTab.timeline || "";
-  const lineupText =
-    extractLineupSectionFromText(textByTab.lineup || "") || textByTab.lineup || "";
+  const lineupText = extractLineupSectionFromText(textByTab.lineup || "") || textByTab.lineup || "";
   const panelMerged = [statsText, playerText, timelineText, lineupText].join("\n");
   const playerFinalizations = mergePlayerFinalizations(
     parsePlayerFinalizationsFromText(playerText),
@@ -6306,7 +6372,10 @@ function collectFrameWalkTexts() {
     });
     stepAt = Date.now();
 
-    const sidePanelFromText = extractSidePanelFromTexts(textByTab, extractTeamsFromHeader(pageText));
+    const sidePanelFromText = extractSidePanelFromTexts(
+      textByTab,
+      extractTeamsFromHeader(pageText)
+    );
     const sidePanelFromNet = scanNetworkSidePanel(networkLog);
     const sidePanel = mergeSidePanel(sidePanelFromText, sidePanelFromNet);
     pipeline.push({
