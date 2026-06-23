@@ -12,6 +12,7 @@ import {
   reconcileTimelineGoals,
   parseGoalScorersFromText,
   parseGoalsFromScoreboardText,
+  parseGoalsFromOdds,
   parseGoalsFromPlayerFinalizations,
   collectScoreboardHintText,
   parseCornerTimelineHintsFromText,
@@ -164,6 +165,56 @@ describe("reconcileTimelineGoals", () => {
 
     assert.match(text, /K Koulibaly/);
     assert.match(text, /extra/);
+  });
+
+  it("parseia marcador e minuto do placar no intervalo", () => {
+    const goals = parseGoalsFromScoreboardText(
+      readFixture("side-panel-scoreboard-norway-intervalo.txt")
+    );
+
+    assert.equal(goals.length, 1);
+    assert.equal(goals[0].player, "M Pedersen");
+    assert.equal(goals[0].minute, 43);
+    assert.equal(goals[0].source, "scoreboard-inferred");
+  });
+
+  it("ignora Jogadores Titulares no parser de marcadores", () => {
+    const goals = parseGoalScorersFromText(readFixture("side-panel-marcadores-norway-junk.txt"));
+
+    assert.equal(goals.length, 1);
+    assert.equal(goals[0].player, "M Pedersen");
+    assert.equal(goals[0].minute, 43);
+  });
+
+  it("recupera M Pedersen 43' priorizando placar sobre mercado colado", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-norway-no-goal.txt"));
+    const out = reconcileTimelineGoals(events, {
+      match: { score: "1-0", scoreHome: 1, scoreAway: 0 },
+      scoreboardText: readFixture("side-panel-scoreboard-norway-intervalo.txt"),
+      goalScorersText: readFixture("side-panel-marcadores-norway-junk.txt"),
+      odds: [
+        { market: "1° Gol", selection: "Ryerson", odds: 13, source: "visible-text" },
+        { market: "1° Gol", selection: "M Pedersen", odds: 43, source: "visible-text" },
+      ],
+    });
+    const goal = out.find((e) => e.type === "goal");
+
+    assert.ok(goal);
+    assert.equal(goal.minute, 43);
+    assert.match(goal.description, /M Pedersen/);
+    assert.equal(goal.source, "scoreboard-inferred");
+  });
+
+  it("parseia minuto do gol a partir de odds 1° Gol", () => {
+    const goals = parseGoalsFromOdds([
+      { market: "1° Gol", selection: "M Pedersen", odds: 43 },
+      { market: "Marcadores de Gol", selection: "Erling Haaland", odds: 4.75 },
+    ]);
+
+    assert.equal(goals.length, 1);
+    assert.equal(goals[0].player, "M Pedersen");
+    assert.equal(goals[0].minute, 43);
+    assert.equal(goals[0].source, "odds-inferred");
   });
 });
 

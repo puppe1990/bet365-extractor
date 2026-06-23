@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.17";
+const VERSION = "3.10.18";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -2860,7 +2860,10 @@ const SCOREBOARD_CLOCK_SCORER_RE =
 const SCOREBOARD_MINUTE_SCORER_RE =
   /\b(\d{1,3})['′]\s+([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30})(?=\s|$)/g;
 const SCOREBOARD_SCORER_MINUTE_RE =
-  /\b([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30})\s+(\d{1,3})['′]\b/g;
+  /\b([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30})\s+(\d{1,3})['′](?:\s|$)/g;
+const GOAL_SCORER_JUNK_RE =
+  /^(Jogadores Titulares|Mostrar Mais|SUBSTITUIÇÃO\+|A Qualquer Momento|Para Marcar|Marcadores|Resultado Correto|Jogador a Marcar)$/i;
+const GOAL_ODDS_MINUTE_RE = /^(\d{1,2})(?:\.0+)?$/;
 
 function parseGoalOrdinal(text) {
   const m = normalize(text).match(GOAL_ORDINAL_RE);
@@ -2882,6 +2885,7 @@ function makeGoalEvent(minute, ordinal, player, source, extra = "") {
 function isLikelyScorerName(name) {
   const s = normalize(name);
   if (!s || s.length > 40) return false;
+  if (GOAL_SCORER_JUNK_RE.test(s)) return false;
   if (NETWORK_NAME_BLOCK_RE.test(s)) return false;
   if (/^(Noruega|Senegal|França|France|Iraque|Iraq|Argentina|Áustria|Austria|Empate)$/i.test(s)) {
     return false;
@@ -2895,9 +2899,19 @@ function parseGoalScorersFromText(text) {
   if (start < 0) return [];
 
   const goals = [];
+  let inScorerList = /^Marcadores$/i.test(lines[start]) && !/de Gol/i.test(lines[start]);
+
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i];
     if (/^(Cronologia|Escalação|Tabela|FINALIZA)/i.test(line)) break;
+    if (/^Marcadores$/i.test(line)) {
+      inScorerList = true;
+      continue;
+    }
+    if (/^Jogadores Titulares$/i.test(line)) {
+      inScorerList = false;
+      continue;
+    }
     if (!isLikelyScorerName(line)) continue;
 
     let minute = null;
@@ -2909,6 +2923,8 @@ function parseGoalScorersFromText(text) {
       }
       if (isLikelyScorerName(lines[j])) break;
     }
+
+    if (!inScorerList && minute === null) continue;
 
     goals.push({
       minute,
@@ -2958,6 +2974,46 @@ function parseGoalsFromScoreboardText(text) {
   return goals;
 }
 
+function parseGoalsFromOdds(odds = []) {
+  const goals = [];
+
+  for (const row of odds || []) {
+    const market = String(row.market || "");
+    const ordinalMatch = market.match(/(\d+)[º°]\s*Gol/i);
+    if (!ordinalMatch) continue;
+
+    const player = String(row.selection || "").trim();
+    if (!isLikelyScorerName(player)) continue;
+
+    const oddsText = String(row.odds ?? "");
+    const minuteMatch = oddsText.match(GOAL_ODDS_MINUTE_RE);
+    if (!minuteMatch) continue;
+
+    const minute = parseInt(minuteMatch[1], 10);
+    if (minute < 1 || minute > 120) continue;
+
+    goals.push({
+      minute,
+      player,
+      ordinal: parseInt(ordinalMatch[1], 10),
+      source: "odds-inferred",
+    });
+  }
+
+  return goals;
+}
+
+function rankGoalHint(hint) {
+  let rank = 0;
+  if (Number.isFinite(hint?.minute)) rank += 100;
+  if (hint?.source === "scoreboard-inferred") rank += 50;
+  if (hint?.source === "odds-inferred") rank += 40;
+  if (hint?.source === "marcadores-inferred" && Number.isFinite(hint?.minute)) rank += 30;
+  if (hint?.source === "marcadores-inferred") rank += 5;
+  if (hint?.source === "finalizations-inferred") rank += 10;
+  return rank;
+}
+
 function parseGoalsFromPlayerFinalizations(rows = []) {
   const hinted = rows.filter(
     (row) =>
@@ -2994,26 +3050,25 @@ function collectScoreboardHintText(domProbe = [], extraTexts = []) {
 
 function gatherGoalRecoveryHints(options = {}) {
   const hints = [];
-  const texts = [
-    options.marcadoresText,
-    options.goalScorersText,
-    options.scoreboardText,
-  ].filter(Boolean);
 
-  for (const text of texts) {
+  hints.push(...parseGoalsFromScoreboardText(options.scoreboardText || ""));
+  hints.push(...parseGoalsFromOdds(options.odds));
+
+  for (const text of [options.marcadoresText, options.goalScorersText].filter(Boolean)) {
     hints.push(...parseGoalScorersFromText(text));
-    hints.push(...parseGoalsFromScoreboardText(text));
   }
 
   hints.push(...parseGoalsFromPlayerFinalizations(options.playerFinalizations));
 
   const seen = new Set();
-  return hints.filter((hint) => {
+  const deduped = hints.filter((hint) => {
     const key = `${hint.minute ?? "?"}|${hint.player ?? ""}|${hint.ordinal ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+
+  return deduped.sort((a, b) => rankGoalHint(b) - rankGoalHint(a));
 }
 
 function reconcileTimelineGoals(events, options = {}) {
@@ -3041,6 +3096,7 @@ function reconcileTimelineGoals(events, options = {}) {
 
     const hint =
       hints.find((h) => h.ordinal === ordinal && !usedHints.has(h)) ||
+      hints.find((h) => !usedHints.has(h) && Number.isFinite(h.minute)) ||
       hints.find((h) => !usedHints.has(h));
     if (hint) usedHints.add(hint);
 
@@ -5993,6 +6049,7 @@ function collectFrameWalkTexts() {
       goalScorersText: textByTab.goalScorers,
       scoreboardText: collectScoreboardHintText(domProbe, [pageText]),
       playerFinalizations: sidePanel.playerFinalizations,
+      odds,
     });
     meta.sidePanelTimelineCount = sidePanel.timeline.length;
     pipeline.push({

@@ -1509,6 +1509,7 @@
       goalScorersText: textByTab.goalScorers,
       scoreboardText: collectScoreboardHintText(domProbe, [pageText]),
       playerFinalizations: sidePanel.playerFinalizations,
+      odds,
     });
     meta.sidePanelTimelineCount = sidePanel.timeline.length;
     pipeline.push({
