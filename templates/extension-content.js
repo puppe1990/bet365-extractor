@@ -888,6 +888,156 @@
     } catch (_) {}
   }
 
+  function resolveMarketGroupContainer(el) {
+    if (!el) return null;
+    for (const sel of MARKET_GROUP_CONTAINER_SELECTORS) {
+      const hit = el.closest?.(sel);
+      if (hit) return hit;
+    }
+    return el.parentElement?.parentElement || el.parentElement || null;
+  }
+
+  function resolveMarketGroupHeader(container) {
+    if (!container) return null;
+    for (const sel of MARKET_GROUP_HEADER_SELECTORS) {
+      const hit = container.querySelector(sel);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function elementIsVisible(el) {
+    try {
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return (
+        rect.width > 2 &&
+        rect.height > 2 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none" &&
+        style.opacity !== "0"
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function marketGroupHasVisibleOdds(container) {
+    if (!container) return false;
+    for (const sel of MARKET_ODDS_SELECTORS) {
+      const nodes = container.querySelectorAll(sel);
+      for (const node of nodes) {
+        if (elementIsVisible(node)) return true;
+      }
+    }
+    const lines = (container.innerText || "").split("\n").map(normalize).filter(Boolean);
+    return lines.some((line) => /^\d+[.,]\d{1,3}$/.test(line));
+  }
+
+  function isCollapsedMarketGroup(container) {
+    if (!container) return false;
+    const header = resolveMarketGroupHeader(container) || container;
+    const ariaExpanded =
+      header.getAttribute?.("aria-expanded") ?? container.getAttribute?.("aria-expanded");
+    if (
+      isMarketGroupCollapsedHint({
+        ariaExpanded,
+        className: `${container.className || ""} ${header.className || ""}`,
+      })
+    ) {
+      return true;
+    }
+    return !marketGroupHasVisibleOdds(container);
+  }
+
+  function collectExpandClickTargets() {
+    const targets = [];
+    const seen = new Set();
+
+    const pushTarget = (el, key) => {
+      if (!el || seen.has(key)) return;
+      try {
+        const rect = el.getBoundingClientRect();
+        if (!isInLeftMarketColumn(rect, window.innerWidth)) return;
+        if (rect.width < 6 || rect.height < 4) return;
+      } catch (_) {
+        return;
+      }
+      seen.add(key);
+      targets.push({ el, key });
+    };
+
+    queryDeep(
+      [
+        ...MARKET_GROUP_HEADER_SELECTORS,
+        "[class*='MarketGroup'] *",
+        "[class*='CouponMarket'] *",
+        "button",
+        "[role='button']",
+        "span",
+        "a",
+        "div",
+      ].join(", ")
+    ).forEach((el) => {
+      const text = normalize(el.textContent || "");
+      if (!text) return;
+
+      if (isMarketShowMoreText(text)) {
+        const rect = el.getBoundingClientRect?.();
+        pushTarget(el, `more|${Math.round(rect?.top || 0)}|${Math.round(rect?.left || 0)}`);
+        return;
+      }
+
+      if (!isMarketCaExpandText(text) || text.length > 4) return;
+      const container = resolveMarketGroupContainer(el);
+      if (!shouldClickMarketExpandControl("CA", { collapsed: isCollapsedMarketGroup(container) })) {
+        return;
+      }
+      const clickEl =
+        el.closest(
+          "[class*='MarketGroupButton'], [class*='MarketGroup'][class*='Header'], [role='button'], button"
+        ) || el;
+      const rect = clickEl.getBoundingClientRect?.();
+      pushTarget(clickEl, `ca|${Math.round(rect?.top || 0)}|${Math.round(rect?.left || 0)}`);
+    });
+
+    queryDeep(MARKET_GROUP_HEADER_SELECTORS.join(", ")).forEach((header) => {
+      const text = normalize(header.textContent || "");
+      if (!isLikelyMarketGroupHeaderText(text)) return;
+      const container = resolveMarketGroupContainer(header);
+      if (!isCollapsedMarketGroup(container)) return;
+      const rect = header.getBoundingClientRect?.();
+      pushTarget(header, `hdr|${Math.round(rect?.top || 0)}|${Math.round(rect?.left || 0)}`);
+    });
+
+    return targets;
+  }
+
+  async function expandCollapsedMarkets(capture, startedAt) {
+    let expandClicked = 0;
+    const clicked = new Set();
+
+    for (let pass = 0; pass < 3; pass++) {
+      const targets = collectExpandClickTargets();
+      for (const target of targets) {
+        if (Date.now() - startedAt > MARKET_TAB_VISIT_BUDGET_MS) return expandClicked;
+        if (expandClicked >= MARKET_EXPAND_MAX_CLICKS) return expandClicked;
+        if (clicked.has(target.key)) continue;
+        clicked.add(target.key);
+        try {
+          target.el.scrollIntoView({ block: "center", behavior: "instant" });
+          dispatchMarketTabClick(target.el);
+          expandClicked++;
+          await delay(MARKET_EXPAND_CLICK_DELAY_MS);
+          capture();
+        } catch (_) {}
+      }
+      if (!targets.length) break;
+    }
+
+    return expandClicked;
+  }
+
   function walkTabContainer(container, consider) {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT);
     let node = walker.nextNode();
@@ -1058,6 +1208,7 @@
         capture();
         if (isPlayerMarketTabKey(key) || isCornerMarketTabKey(key)) {
           await scrollPlayerPropGrids(capture, startedAt);
+          await expandCollapsedMarkets(capture, startedAt);
         }
       } catch (_) {}
     }
@@ -1108,6 +1259,8 @@
     };
 
     capture();
+    const startedAt = Date.now();
+    let expandClicked = 0;
 
     for (const target of targets.slice(0, 3)) {
       await scrollTarget(target);
@@ -1129,6 +1282,8 @@
       } catch (_) {}
     }
 
+    expandClicked = await expandCollapsedMarkets(capture, startedAt);
+
     originals.forEach((top, el) => {
       el.scrollTop = top;
     });
@@ -1138,6 +1293,7 @@
       scrollSteps: snapshots.length,
       container: String(primary.className || "scrollable").slice(0, 80),
       tabsVisited: [],
+      expandClicked,
       playerMarkets: snapshots.reduce(
         (sum, text) => sum + (text.match(/Jogador\s*-/gi) || []).length,
         0
@@ -1486,14 +1642,14 @@
     pipeline.push({
       step: "leftColumnScroll",
       count: scrollCollect.scrollSteps,
-      detail: `${scrollCollect.container || "none"} tabs=${(scrollCollect.tabsVisited || []).join(",") || "none"}`,
+      detail: `${scrollCollect.container || "none"} tabs=${(scrollCollect.tabsVisited || []).join(",") || "none"} expand=${scrollCollect.expandClicked ?? 0}`,
       ms: Date.now() - stepAt,
     });
     stepAt = Date.now();
     pipeline.push({
       step: "mainWorldScroll",
       count: mainScrollCollect.scrollSteps,
-      detail: `${mainScrollCollect.container || "none"} playerMarkets=${mainScrollCollect.playerMarkets ?? 0} tabsFound=${mainScrollCollect.tabsFound ?? 0} tabs=${(mainScrollCollect.tabsVisited || []).join(",") || "none"}`,
+      detail: `${mainScrollCollect.container || "none"} playerMarkets=${mainScrollCollect.playerMarkets ?? 0} tabsFound=${mainScrollCollect.tabsFound ?? 0} tabs=${(mainScrollCollect.tabsVisited || []).join(",") || "none"} expand=${mainScrollCollect.expandClicked ?? 0}`,
       ms: Date.now() - stepAt,
     });
     stepAt = Date.now();

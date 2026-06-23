@@ -231,6 +231,10 @@ describe("extension sniffer wiring", () => {
     assert.match(source, /PREMATCH_MARKET_TABS_VISIT/);
     assert.match(source, /Jogador a Marcar/);
     assert.match(source, /MARKET_TAB_CONTAINER_SELECTORS/);
+    assert.match(source, /expandCollapsedMarkets/);
+    assert.match(source, /expandClicked/);
+    assert.match(source, /isMarketCaExpandText/);
+    assert.match(source, /Mostrar Mais/);
   });
 
   it("main-world-scroll é gerado a partir do template de build", () => {

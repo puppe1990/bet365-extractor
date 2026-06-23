@@ -28,6 +28,9 @@ const sidePanelTabs = stripModuleSyntax(
   readFileSync(join(root, "lib/bet365-side-panel-tabs.js"), "utf8")
 );
 const marketTabs = stripModuleSyntax(readFileSync(join(root, "lib/bet365-market-tabs.js"), "utf8"));
+const marketExpand = stripModuleSyntax(
+  readFileSync(join(root, "lib/bet365-market-expand.js"), "utf8")
+);
 const statsSubtabs = stripModuleSyntax(
   readFileSync(join(root, "lib/bet365-stats-subtabs.js"), "utf8")
 );
@@ -52,6 +55,7 @@ const parserBundle = [
   urlHelpers,
   parsers,
   marketTabs,
+  marketExpand,
   statsSubtabs,
   sidePanel,
   sidePanelTabs,
@@ -72,7 +76,9 @@ mkdirSync(join(root, "extension/dist"), { recursive: true });
 writeFileSync(join(root, "extension/dist/content.js"), content);
 
 const mainWorldTemplate = readFileSync(join(root, "templates/main-world-scroll.js"), "utf8");
-const mainWorldScroll = mainWorldTemplate.replace("/* __MARKET_TABS__ */", () => marketTabs);
+const mainWorldScroll = mainWorldTemplate
+  .replace("/* __MARKET_TABS__ */", () => marketTabs)
+  .replace("/* __MARKET_EXPAND__ */", () => marketExpand);
 writeFileSync(join(root, "extension/main-world-scroll.js"), mainWorldScroll);
 const zipUtils = `${format}\n\n${zip}\n
 globalThis.buildZipEntries = buildZipEntries;
