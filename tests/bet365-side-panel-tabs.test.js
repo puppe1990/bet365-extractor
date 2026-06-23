@@ -5,8 +5,12 @@ import {
   collectSidePanelTabCandidates,
   isInSidePanelTabBand,
   leafSidePanelTabKey,
+  looksLikeGoalScorersTabContent,
+  looksLikeLineupTabContent,
+  looksLikeTimelineTabContent,
   normalizeSidePanelTabLabel,
   scoreSidePanelTabBarContainer,
+  scoreSidePanelTabContent,
   sidePanelTabKeyFromText,
 } from "../lib/bet365-side-panel-tabs.js";
 
@@ -71,5 +75,34 @@ describe("bet365 side panel tabs", () => {
     );
 
     assert.deepEqual(picked.map((t) => t.key).sort(), ["lineup", "stats", "timeline"]);
+  });
+
+  it("valida conteúdo isolado de Marcadores de Gols", () => {
+    const valid = "Marcadores de Gol\nMarcadores\nM Pedersen\n43'\nCronologia\nEscalação";
+    const junk =
+      "Marcadores de Gol\nJogadores Titulares\n9\nErling Haaland\nPopular\nJogador a Marcar";
+
+    assert.equal(looksLikeGoalScorersTabContent(valid), true);
+    assert.equal(looksLikeGoalScorersTabContent(junk), false);
+    assert.ok(scoreSidePanelTabContent(valid, "goalScorers") > 0);
+    assert.equal(scoreSidePanelTabContent(junk, "goalScorers"), 0);
+  });
+
+  it("valida conteúdo isolado de Escalação", () => {
+    const valid =
+      "Escalação\nO Nyland\nD Wolfe\nE Mendy\nE Haaland\nM Pedersen\nSuplentes\nN Jackson";
+    const junk = "Escalação\nCronologia\n17'\n5° Escanteio";
+
+    assert.equal(looksLikeLineupTabContent(valid), true);
+    assert.equal(looksLikeLineupTabContent(junk), false);
+    assert.ok(scoreSidePanelTabContent(valid, "lineup") > 0);
+  });
+
+  it("valida conteúdo isolado de Cronologia", () => {
+    const valid = "Cronologia\n17'\n5° Escanteio\n11'\n2° Impedimento\n4'\n1° Impedimento";
+    const junk = "Cronologia\nEstat.\n0.22 xG\nAtaques Perigosos";
+
+    assert.equal(looksLikeTimelineTabContent(valid), true);
+    assert.equal(looksLikeTimelineTabContent(junk), false);
   });
 });

@@ -10,6 +10,8 @@ import {
   parseGluedMatch,
   collectGluedMatches,
   collectSpacedScoreboardMatches,
+  extractScoreboardStatusNear,
+  inferMatchStatusFromScoreboard,
   pickBestMatch,
   parseMatchFromLines,
   enrichMatchFromHeader,
@@ -205,6 +207,44 @@ describe("pickBestMatch", () => {
   });
 });
 
+describe("extractScoreboardStatusNear", () => {
+  it("extrai Intervalo após relógio 45:00", () => {
+    const flat = "Noruega 1 0 Senegal 45:00 Intervalo M Pedersen 43'";
+    const clockEnd = flat.indexOf("45:00") + "45:00".length;
+    assert.equal(extractScoreboardStatusNear(flat, clockEnd), "Intervalo");
+  });
+
+  it("retorna null quando não há status próximo ao relógio", () => {
+    const flat = "Noruega 1 0 Senegal 48:46 M Pedersen 43'";
+    assert.equal(extractScoreboardStatusNear(flat, flat.length), null);
+  });
+});
+
+describe("inferMatchStatusFromScoreboard", () => {
+  it("define status Intervalo quando placar está em 45:00", () => {
+    const match = { score: "1-0", clock: "45:00" };
+    const text = "Noruega 1 0 Senegal 45:00 Intervalo M Pedersen 43'";
+    const out = inferMatchStatusFromScoreboard(match, text);
+
+    assert.equal(out.status, "Intervalo");
+  });
+
+  it("não força Intervalo fora do minuto 45", () => {
+    const match = { score: "1-0", clock: "48:46" };
+    const text = "Noruega 1 0 Senegal 48:46 Intervalo M Pedersen 43'";
+    const out = inferMatchStatusFromScoreboard(match, text);
+
+    assert.equal(out.status, undefined);
+  });
+
+  it("preserva status existente no match", () => {
+    const match = { score: "1-0", clock: "45:00", status: "Ao Vivo" };
+    const out = inferMatchStatusFromScoreboard(match, "45:00 Intervalo");
+
+    assert.equal(out.status, "Ao Vivo");
+  });
+});
+
 describe("collectSpacedScoreboardMatches", () => {
   it("extrai placar com gols separados por espaço no widget Bet365", () => {
     const text =
@@ -217,6 +257,16 @@ describe("collectSpacedScoreboardMatches", () => {
     assert.equal(matches[0].clock, "88:08");
     assert.equal(matches[0].homeTeam, "Uruguai");
     assert.equal(matches[0].awayTeam, "Cabo Verde");
+  });
+
+  it("captura status Intervalo no placar norueguês", () => {
+    const text =
+      "Noruega 1 0 Senegal 45:00 Intervalo M Pedersen 43' 1 0 Estat. Cronologia Escalação";
+    const matches = collectSpacedScoreboardMatches(text);
+
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].status, "Intervalo");
+    assert.equal(matches[0].clock, "45:00");
   });
 
   it("integra formato espaçado em collectMatchCandidatesFromText", () => {

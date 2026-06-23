@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.20";
+const VERSION = "3.10.21";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -757,6 +757,20 @@ function collectGluedMatches(text) {
   return matches;
 }
 
+function extractScoreboardStatusNear(flat, endIndex = 0) {
+  const slice = flat.slice(Math.max(0, endIndex - 20), endIndex + 160);
+  const afterClock = slice.match(/\b\d{1,3}:\d{2}\s+(Intervalo|INTERVALO|Ao\s*Vivo|1T|2T)\b/i);
+  if (afterClock) {
+    const raw = afterClock[1];
+    if (/^INTERVALO$/i.test(raw)) return "Intervalo";
+    if (/^Intervalo$/i.test(raw)) return "Intervalo";
+    if (/^Ao\s*Vivo$/i.test(raw)) return "Ao Vivo";
+    return raw;
+  }
+  if (/\bINTERVALO\b/i.test(slice) || /\bIntervalo\b/.test(slice)) return "Intervalo";
+  return null;
+}
+
 function collectSpacedScoreboardMatches(text) {
   const flat = text.replace(/\s+/g, " ").trim();
   const matches = [];
@@ -775,11 +789,28 @@ function collectSpacedScoreboardMatches(text) {
       scoreHome,
       scoreAway,
       clock: m[5],
-      status: flat.match(/Intervalo|INTERVALO|1T|2T|Ao Vivo/i)?.[0] || null,
+      status:
+        extractScoreboardStatusNear(flat, m.index + m[0].length) ||
+        flat.match(/Intervalo|INTERVALO|1T|2T|Ao Vivo/i)?.[0] ||
+        null,
     });
   }
 
   return matches;
+}
+
+function inferMatchStatusFromScoreboard(match, scoreboardText = "") {
+  if (!match || match.status) return match;
+  const flat = String(scoreboardText || "").replace(/\s+/g, " ");
+  const clock = String(match.clock || "");
+  const clockIndex = clock ? flat.indexOf(clock) : -1;
+  const status =
+    clockIndex >= 0
+      ? extractScoreboardStatusNear(flat, clockIndex + clock.length)
+      : extractScoreboardStatusNear(flat, flat.length);
+  if (!status) return match;
+  if (status === "Intervalo" && !/^45:\d{2}$/.test(clock) && clock !== "45:00") return match;
+  return { ...match, status };
 }
 
 function parseHalftimeScore(text) {
@@ -2502,8 +2533,7 @@ const SIDE_PANEL_STATS_TAB_MAP = {
 };
 
 function looksLikeGoalScorersPanelText(text) {
-  const s = String(text || "");
-  return /Marcadores de Gols?/i.test(s) && s.length > 40;
+  return looksLikeGoalScorersTabContent(text);
 }
 
 function looksLikeLateralStatsPanelText(text) {
@@ -2870,15 +2900,37 @@ function parseGoalOrdinal(text) {
   return m ? parseInt(m[1], 10) : null;
 }
 
-function makeGoalEvent(minute, ordinal, player, source, extra = "") {
+function makeGoalEvent(minute, ordinal, player, source, extras = {}) {
   const ord = `${ordinal}° Goal`;
-  const desc = [ord, player, extra].filter(Boolean).join(" | ");
+  const parts = [ord];
+  if (player) parts.push(extras.method ? `${player} - ${extras.method}` : player);
+  if (extras.assist) parts.push(`${extras.assist} - Assist`);
+  const desc = parts.join(" | ");
   return {
     minute: Number.isFinite(minute) ? minute : null,
     type: "goal",
     description: desc,
-    details: [desc],
+    details: parts,
     source,
+  };
+}
+
+function enrichGoalHint(hint = {}, events = [], texts = []) {
+  if (!hint?.player) return hint;
+  const surname = hint.player.split(/\s+/).pop();
+  if (!surname || surname.length < 3) return hint;
+
+  const corpus = [...texts, ...events.map((e) => e.description || "")].join("\n");
+  const chuteRe = new RegExp(`${surname}[A-Za-zÀ-ú' .-]{0,24}\\s*-\\s*Chute`, "i");
+  const assistRe = /([A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,28})\s*-\s*Assist/;
+
+  const method = chuteRe.test(corpus) ? "Chute" : hint.method || null;
+  const assistMatch = corpus.match(assistRe);
+
+  return {
+    ...hint,
+    method,
+    assist: assistMatch?.[1]?.trim() || hint.assist || null,
   };
 }
 
@@ -3101,12 +3153,20 @@ function reconcileTimelineGoals(events, options = {}) {
       hints.find((h) => !usedHints.has(h));
     if (hint) usedHints.add(hint);
 
+    const enriched = enrichGoalHint(hint || {}, out, [
+      options.timelineText,
+      options.scoreboardText,
+      options.marcadoresText,
+      options.goalScorersText,
+    ]);
+
     out.push(
       makeGoalEvent(
-        hint?.minute ?? null,
+        enriched?.minute ?? null,
         ordinal,
-        hint?.player || "",
-        hint?.source || "score-inferred"
+        enriched?.player || "",
+        enriched?.source || hint?.source || "score-inferred",
+        { method: enriched?.method, assist: enriched?.assist }
       )
     );
     coveredOrdinals.add(ordinal);
@@ -3275,7 +3335,8 @@ function isRealTimelineGoal(event) {
   if (event?.type !== "goal") return false;
   const desc = String(event.description || "");
   const details = event.details || [];
-  if (isTimelineMarketLeakLine(desc) || details.some((d) => isTimelineMarketLeakLine(d))) return false;
+  if (isTimelineMarketLeakLine(desc) || details.some((d) => isTimelineMarketLeakLine(d)))
+    return false;
   if (/\d+[º°]\s*Goal/i.test(desc)) return true;
   if (/ - (Chute|Assist)/i.test(desc)) return true;
   if (/inferred/.test(event.source || "")) return true;
@@ -4382,6 +4443,49 @@ function sidePanelTabLabelRegex(key) {
   return new RegExp(`^(?:${source})$`, "i");
 }
 
+const SIDE_PANEL_PLAYER_LINE_RE = /^[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,30}$/;
+
+function looksLikeGoalScorersTabContent(text) {
+  const s = String(text || "");
+  if (!/Marcadores de Gols?/i.test(s)) return false;
+  if (s.length > 12000) return false;
+  if (/Jogadores Titulares/i.test(s) && !/\nMarcadores\n/i.test(s)) return false;
+  if (/\nMarcadores\n/i.test(s) && /\d{1,3}['′]\s*$/m.test(s)) return true;
+  if (/\n[A-ZÀ-Ú][\s.][A-Za-zÀ-ú][A-Za-zÀ-ú' .-]{1,28}\n\d{1,3}['′]\s*$/m.test(s)) return true;
+  return false;
+}
+
+function looksLikeLineupTabContent(text) {
+  const s = String(text || "");
+  if (!/Escalação/i.test(s)) return false;
+  if (s.length > 12000) return false;
+  const players = (s.match(SIDE_PANEL_PLAYER_LINE_RE) || []).length;
+  return players >= 8 || /Suplentes/i.test(s);
+}
+
+function looksLikeTimelineTabContent(text) {
+  const s = String(text || "");
+  if (!/Cronologia/i.test(s)) return false;
+  if (s.length > 15000) return false;
+  return (s.match(/\d{1,3}['′]/g) || []).length >= 2;
+}
+
+function scoreSidePanelTabContent(text, key) {
+  const validators = {
+    goalScorers: looksLikeGoalScorersTabContent,
+    lineup: looksLikeLineupTabContent,
+    timeline: looksLikeTimelineTabContent,
+  };
+  const validate = validators[key];
+  if (!validate) return 0;
+  if (!validate(text)) return 0;
+  let score = Math.min(String(text || "").length, 5000);
+  if (key === "goalScorers" && /\d{1,3}['′]\s*$/m.test(text)) score += 500;
+  if (key === "lineup" && /Suplentes/i.test(text)) score += 300;
+  if (key === "timeline" && /Escanteio|Goal|Gol/i.test(text)) score += 200;
+  return score;
+}
+
   const networkLog = [];
 const MAX_NET = 120;
 
@@ -4692,6 +4796,38 @@ function collectFrameWalkTexts() {
     return getAllVisibleText();
   }
 
+  function getSidePanelScopedText(fromTab, key) {
+    if (!fromTab || !key) return "";
+
+    const validators = {
+      stats: (text) =>
+        looksLikeLiveStatsPanelText(text) && !shouldTreatAsMarketRibbonNotStats(text),
+      goalScorers: looksLikeGoalScorersTabContent,
+      lateral: looksLikeLateralStatsPanelText,
+      timeline: looksLikeTimelineTabContent,
+      lineup: looksLikeLineupTabContent,
+      playerStats: (text) => /FINALIZA(COES|ÇÕES)/i.test(text) && text.length < 10000,
+    };
+    const score = (text) => scoreSidePanelTabContent(text, key);
+    const validate = validators[key];
+    if (!validate) return "";
+
+    let best = "";
+    let bestScore = 0;
+    let node = fromTab;
+    for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+      const text = node.innerText || "";
+      if (text.length > 20000 || text.length < 30) continue;
+      if (!validate(text)) continue;
+      const ranked = score(text) || text.length;
+      if (ranked > bestScore) {
+        bestScore = ranked;
+        best = text;
+      }
+    }
+    return best;
+  }
+
   function dispatchPanelClick(el) {
     try {
       el.dispatchEvent(
@@ -4853,7 +4989,7 @@ function collectFrameWalkTexts() {
     }));
   }
 
-  function collectSidePanelTabElements(labelRe) {
+  function collectSidePanelTabElements(labelRe, tabKey = null) {
     const nodes = [];
     const scopes = [];
     SIDE_PANEL_TAB_SCOPE_SELECTORS.forEach((sel) =>
@@ -4870,7 +5006,12 @@ function collectFrameWalkTexts() {
       if (!leafSidePanelTabKey(text, childTexts)) return;
       try {
         const rect = el.getBoundingClientRect();
-        if (!isInSidePanelTabBand(rect, window.innerWidth)) return;
+        const relaxed = tabKey === "goalScorers" || tabKey === "lateral";
+        if (relaxed) {
+          if (!isInRelaxedSidePanelTabBand(rect, window.innerWidth)) return;
+        } else if (!isInSidePanelTabBand(rect, window.innerWidth)) {
+          return;
+        }
         nodes.push({
           el,
           text,
@@ -4908,7 +5049,7 @@ function collectFrameWalkTexts() {
     return collectSidePanelTabCandidates(nodes, window.innerWidth);
   }
 
-  function clickSidePanelTab(labelRe, scopeRoot = null) {
+  function clickSidePanelTab(labelRe, scopeRoot = null, tabKey = null) {
     if (scopeRoot) {
       const text = normalizeSidePanelTabLabel(scopeRoot?.innerText || scopeRoot?.textContent || "");
       if (labelRe.test(text)) {
@@ -4920,7 +5061,7 @@ function collectFrameWalkTexts() {
       }
     }
 
-    const candidates = collectSidePanelTabElements(labelRe);
+    const candidates = collectSidePanelTabElements(labelRe, tabKey);
     const tab = candidates[0]?.el;
     if (!tab) return null;
     try {
@@ -5203,22 +5344,34 @@ function collectFrameWalkTexts() {
 
     for (const key of SIDE_PANEL_TAB_KEYS) {
       if (key === "stats") continue;
-      const essential = key === "timeline" || key === "lineup" || key === "playerStats";
+      const essential =
+        key === "timeline" ||
+        key === "lineup" ||
+        key === "playerStats" ||
+        key === "goalScorers";
       if (!essential && sidePanelRemainingMs() < 600) continue;
-      const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key]);
+      const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key], null, key);
       tabClicks[key] = Boolean(tab);
-      if (tab) await delay(essential ? 180 : 120);
+      if (tab) await delay(essential ? 200 : 120);
+      const scopedText = getSidePanelScopedText(tab, key);
       if (key === "timeline" && tab) {
         const scrolled = await scrollTimelinePanel(tab);
         timelineScrollMeta = scrolled;
-        const timelineText = mergeTimelineSectionTexts(getSidePanelText(tab), scrolled.text);
+        const timelineText = mergeTimelineSectionTexts(
+          scopedText || getSidePanelText(tab),
+          scrolled.text
+        );
         textByTab[key] = mergeSidePanelTabText(
-          timelineText || getSidePanelText(tab),
+          timelineText || scopedText || getSidePanelText(tab),
           fullText,
           key
         );
       } else {
-        textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
+        textByTab[key] = mergeSidePanelTabText(
+          scopedText || getSidePanelText(tab),
+          fullText,
+          key
+        );
       }
     }
 
@@ -6058,7 +6211,7 @@ function collectFrameWalkTexts() {
       );
     }
 
-    const { match, inference, analysis } = finalizeMatchWithMarkets(
+    let { match, inference, analysis } = finalizeMatchWithMarkets(
       matchBase,
       odds,
       visibleText,
@@ -6067,11 +6220,14 @@ function collectFrameWalkTexts() {
       location.href,
       { headerText: pageText, domHeader }
     );
+    const scoreboardHintText = collectScoreboardHintText(domProbe);
+    match = inferMatchStatusFromScoreboard(match, scoreboardHintText);
     sidePanel.timeline = reconcileTimelineGoals(sidePanel.timeline, {
       match,
       marcadoresText: textByTab.statsSubTabs?.marcadores,
       goalScorersText: textByTab.goalScorers,
-      scoreboardText: collectScoreboardHintText(domProbe),
+      scoreboardText: scoreboardHintText,
+      timelineText: textByTab.timeline,
       playerFinalizations: sidePanel.playerFinalizations,
       odds,
     });

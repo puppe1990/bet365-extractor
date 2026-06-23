@@ -529,7 +529,7 @@
     return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
   }
 
-  const VERSION = "3.10.20";
+  const VERSION = "3.10.21";
 
   const JUNK_ODDS_SELECTIONS =
     /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -769,6 +769,20 @@
     return matches;
   }
 
+  function extractScoreboardStatusNear(flat, endIndex = 0) {
+    const slice = flat.slice(Math.max(0, endIndex - 20), endIndex + 160);
+    const afterClock = slice.match(/\b\d{1,3}:\d{2}\s+(Intervalo|INTERVALO|Ao\s*Vivo|1T|2T)\b/i);
+    if (afterClock) {
+      const raw = afterClock[1];
+      if (/^INTERVALO$/i.test(raw)) return "Intervalo";
+      if (/^Intervalo$/i.test(raw)) return "Intervalo";
+      if (/^Ao\s*Vivo$/i.test(raw)) return "Ao Vivo";
+      return raw;
+    }
+    if (/\bINTERVALO\b/i.test(slice) || /\bIntervalo\b/.test(slice)) return "Intervalo";
+    return null;
+  }
+
   function collectSpacedScoreboardMatches(text) {
     const flat = text.replace(/\s+/g, " ").trim();
     const matches = [];
@@ -787,11 +801,28 @@
         scoreHome,
         scoreAway,
         clock: m[5],
-        status: flat.match(/Intervalo|INTERVALO|1T|2T|Ao Vivo/i)?.[0] || null,
+        status:
+          extractScoreboardStatusNear(flat, m.index + m[0].length) ||
+          flat.match(/Intervalo|INTERVALO|1T|2T|Ao Vivo/i)?.[0] ||
+          null,
       });
     }
 
     return matches;
+  }
+
+  function inferMatchStatusFromScoreboard(match, scoreboardText = "") {
+    if (!match || match.status) return match;
+    const flat = String(scoreboardText || "").replace(/\s+/g, " ");
+    const clock = String(match.clock || "");
+    const clockIndex = clock ? flat.indexOf(clock) : -1;
+    const status =
+      clockIndex >= 0
+        ? extractScoreboardStatusNear(flat, clockIndex + clock.length)
+        : extractScoreboardStatusNear(flat, flat.length);
+    if (!status) return match;
+    if (status === "Intervalo" && !/^45:\d{2}$/.test(clock) && clock !== "45:00") return match;
+    return { ...match, status };
   }
 
   function parseHalftimeScore(text) {

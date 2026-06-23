@@ -10,6 +10,7 @@ import {
   buildTimelineFromPanelTexts,
   reconcileTimelineCorners,
   reconcileTimelineGoals,
+  enrichGoalHint,
   isRealTimelineGoal,
   parseGoalScorersFromText,
   parseGoalsFromScoreboardText,
@@ -243,6 +244,34 @@ describe("reconcileTimelineGoals", () => {
     assert.equal(goals[0].player, "M Pedersen");
     assert.equal(goals[0].minute, 43);
     assert.equal(goals[0].source, "odds-inferred");
+  });
+
+  it("enriquece gol com Chute e Assist da cronologia", () => {
+    const hint = { player: "M Pedersen", minute: 43, source: "scoreboard-inferred" };
+    const timeline = ["46'", "1° Goal", "M Pedersen - Chute", "E Haaland - Assist"].join("\n");
+    const enriched = enrichGoalHint(hint, [], [timeline]);
+
+    assert.equal(enriched.method, "Chute");
+    assert.equal(enriched.assist, "E Haaland");
+  });
+
+  it("inclui Chute no gol recuperado quando cronologia tem detalhe", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-norway-no-goal.txt"));
+    const timelineWithShot = [
+      readFixture("side-panel-timeline-norway-no-goal.txt"),
+      "46'",
+      "1° Goal",
+      "M Pedersen - Chute",
+    ].join("\n");
+    const out = reconcileTimelineGoals(events, {
+      match: { score: "1-0", scoreHome: 1, scoreAway: 0 },
+      scoreboardText: readFixture("side-panel-scoreboard-norway-intervalo.txt"),
+      timelineText: timelineWithShot,
+    });
+    const goal = out.find((e) => e.type === "goal");
+
+    assert.ok(goal);
+    assert.match(goal.description, /M Pedersen - Chute/);
   });
 });
 

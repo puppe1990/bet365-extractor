@@ -22,10 +22,7 @@ function buildBet365Slug(data) {
 
 function slugifyClockPart(clock) {
   if (!clock) return "sem-tempo";
-  const normalized = String(clock)
-    .trim()
-    .replace(/:/g, "-")
-    .replace(/\+/g, "mais");
+  const normalized = String(clock).trim().replace(/:/g, "-").replace(/\+/g, "mais");
   return slugifyFilenamePart(normalized) || "sem-tempo";
 }
 

@@ -128,6 +128,38 @@
     return getAllVisibleText();
   }
 
+  function getSidePanelScopedText(fromTab, key) {
+    if (!fromTab || !key) return "";
+
+    const validators = {
+      stats: (text) =>
+        looksLikeLiveStatsPanelText(text) && !shouldTreatAsMarketRibbonNotStats(text),
+      goalScorers: looksLikeGoalScorersTabContent,
+      lateral: looksLikeLateralStatsPanelText,
+      timeline: looksLikeTimelineTabContent,
+      lineup: looksLikeLineupTabContent,
+      playerStats: (text) => /FINALIZA(COES|ÇÕES)/i.test(text) && text.length < 10000,
+    };
+    const score = (text) => scoreSidePanelTabContent(text, key);
+    const validate = validators[key];
+    if (!validate) return "";
+
+    let best = "";
+    let bestScore = 0;
+    let node = fromTab;
+    for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+      const text = node.innerText || "";
+      if (text.length > 20000 || text.length < 30) continue;
+      if (!validate(text)) continue;
+      const ranked = score(text) || text.length;
+      if (ranked > bestScore) {
+        bestScore = ranked;
+        best = text;
+      }
+    }
+    return best;
+  }
+
   function dispatchPanelClick(el) {
     try {
       el.dispatchEvent(
@@ -289,7 +321,7 @@
     }));
   }
 
-  function collectSidePanelTabElements(labelRe) {
+  function collectSidePanelTabElements(labelRe, tabKey = null) {
     const nodes = [];
     const scopes = [];
     SIDE_PANEL_TAB_SCOPE_SELECTORS.forEach((sel) =>
@@ -306,7 +338,12 @@
       if (!leafSidePanelTabKey(text, childTexts)) return;
       try {
         const rect = el.getBoundingClientRect();
-        if (!isInSidePanelTabBand(rect, window.innerWidth)) return;
+        const relaxed = tabKey === "goalScorers" || tabKey === "lateral";
+        if (relaxed) {
+          if (!isInRelaxedSidePanelTabBand(rect, window.innerWidth)) return;
+        } else if (!isInSidePanelTabBand(rect, window.innerWidth)) {
+          return;
+        }
         nodes.push({
           el,
           text,
@@ -344,7 +381,7 @@
     return collectSidePanelTabCandidates(nodes, window.innerWidth);
   }
 
-  function clickSidePanelTab(labelRe, scopeRoot = null) {
+  function clickSidePanelTab(labelRe, scopeRoot = null, tabKey = null) {
     if (scopeRoot) {
       const text = normalizeSidePanelTabLabel(scopeRoot?.innerText || scopeRoot?.textContent || "");
       if (labelRe.test(text)) {
@@ -356,7 +393,7 @@
       }
     }
 
-    const candidates = collectSidePanelTabElements(labelRe);
+    const candidates = collectSidePanelTabElements(labelRe, tabKey);
     const tab = candidates[0]?.el;
     if (!tab) return null;
     try {
@@ -639,22 +676,27 @@
 
     for (const key of SIDE_PANEL_TAB_KEYS) {
       if (key === "stats") continue;
-      const essential = key === "timeline" || key === "lineup" || key === "playerStats";
+      const essential =
+        key === "timeline" || key === "lineup" || key === "playerStats" || key === "goalScorers";
       if (!essential && sidePanelRemainingMs() < 600) continue;
-      const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key]);
+      const tab = clickSidePanelTab(SIDE_PANEL_TAB_LABELS[key], null, key);
       tabClicks[key] = Boolean(tab);
-      if (tab) await delay(essential ? 180 : 120);
+      if (tab) await delay(essential ? 200 : 120);
+      const scopedText = getSidePanelScopedText(tab, key);
       if (key === "timeline" && tab) {
         const scrolled = await scrollTimelinePanel(tab);
         timelineScrollMeta = scrolled;
-        const timelineText = mergeTimelineSectionTexts(getSidePanelText(tab), scrolled.text);
+        const timelineText = mergeTimelineSectionTexts(
+          scopedText || getSidePanelText(tab),
+          scrolled.text
+        );
         textByTab[key] = mergeSidePanelTabText(
-          timelineText || getSidePanelText(tab),
+          timelineText || scopedText || getSidePanelText(tab),
           fullText,
           key
         );
       } else {
-        textByTab[key] = mergeSidePanelTabText(getSidePanelText(tab), fullText, key);
+        textByTab[key] = mergeSidePanelTabText(scopedText || getSidePanelText(tab), fullText, key);
       }
     }
 
@@ -1494,7 +1536,7 @@
       );
     }
 
-    const { match, inference, analysis } = finalizeMatchWithMarkets(
+    let { match, inference, analysis } = finalizeMatchWithMarkets(
       matchBase,
       odds,
       visibleText,
@@ -1503,11 +1545,14 @@
       location.href,
       { headerText: pageText, domHeader }
     );
+    const scoreboardHintText = collectScoreboardHintText(domProbe);
+    match = inferMatchStatusFromScoreboard(match, scoreboardHintText);
     sidePanel.timeline = reconcileTimelineGoals(sidePanel.timeline, {
       match,
       marcadoresText: textByTab.statsSubTabs?.marcadores,
       goalScorersText: textByTab.goalScorers,
-      scoreboardText: collectScoreboardHintText(domProbe),
+      scoreboardText: scoreboardHintText,
+      timelineText: textByTab.timeline,
       playerFinalizations: sidePanel.playerFinalizations,
       odds,
     });
