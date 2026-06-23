@@ -529,7 +529,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.23";
+const VERSION = "3.10.24";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;

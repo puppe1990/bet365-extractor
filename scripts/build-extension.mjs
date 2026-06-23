@@ -33,6 +33,10 @@ const statsSubtabs = stripModuleSyntax(
 );
 const format = stripModuleSyntax(readFileSync(join(root, "lib/bet365-format.js"), "utf8"));
 const zip = stripModuleSyntax(readFileSync(join(root, "lib/bet365-zip.js"), "utf8"));
+const extractPlayer = stripModuleSyntax(
+  readFileSync(join(root, "lib/bet365-extract-player.js"), "utf8")
+);
+const playerSnippet = readFileSync(join(root, "templates/extract-player-snippet.js"), "utf8");
 
 const pageSniffer = readFileSync(join(root, "templates/network-page-sniffer.js"), "utf8");
 const network = readFileSync(join(root, "templates/network-snippet.js"), "utf8").replace(
@@ -51,12 +55,17 @@ const parserBundle = [
   statsSubtabs,
   sidePanel,
   sidePanelTabs,
+  extractPlayer,
 ].join("\n\n");
 const inject = (source, marker, chunk) => source.split(marker).join(chunk);
 const content = inject(
-  inject(inject(extTemplate, "/* __PARSERS__ */", parserBundle), "/* __NETWORK__ */", network),
-  "/* __FRAMES__ */",
-  frames
+  inject(
+    inject(inject(extTemplate, "/* __PARSERS__ */", parserBundle), "/* __NETWORK__ */", network),
+    "/* __FRAMES__ */",
+    frames
+  ),
+  "/* __EXTRACT_PLAYER__ */",
+  playerSnippet
 );
 
 mkdirSync(join(root, "extension/dist"), { recursive: true });

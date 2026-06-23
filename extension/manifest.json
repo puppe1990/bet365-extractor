@@ -16,7 +16,7 @@
   "content_scripts": [
     {
       "matches": ["*://*.bet365.bet.br/*", "*://*.bet365.com/*", "*://*.bet365.bet/*"],
-      "js": ["dist/content.js"],
+      "js": ["vendor/jszip.min.js", "dist/zip-utils.js", "dist/content.js"],
       "run_at": "document_start",
       "all_frames": true
     }

@@ -1687,4 +1687,17 @@
 
     return true;
   });
+
+  /* __EXTRACT_PLAYER__ */
+
+  function bootExtractPlayer() {
+    if (window !== window.top) return;
+    mountExtractPlayer({ buildData, version: VERSION });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootExtractPlayer, { once: true });
+  } else {
+    bootExtractPlayer();
+  }
 })();

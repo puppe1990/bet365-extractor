@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.23";
+const VERSION = "3.10.24";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -3210,12 +3210,8 @@ function reconcileTimelineGoals(events, options = {}) {
     if (out.filter((e) => e.type === "goal").length >= expected) break;
 
     const hint =
-      hints.find(
-        (h) => h.ordinal === ordinal && !usedHints.has(h) && !hintAlreadyCovered(h)
-      ) ||
-      hints.find(
-        (h) => !usedHints.has(h) && Number.isFinite(h.minute) && !hintAlreadyCovered(h)
-      ) ||
+      hints.find((h) => h.ordinal === ordinal && !usedHints.has(h) && !hintAlreadyCovered(h)) ||
+      hints.find((h) => !usedHints.has(h) && Number.isFinite(h.minute) && !hintAlreadyCovered(h)) ||
       hints.find((h) => !usedHints.has(h) && !hintAlreadyCovered(h));
     if (hint) usedHints.add(hint);
     if (hintAlreadyCovered(hint)) {
@@ -4727,6 +4723,155 @@ function scoreSidePanelTabContent(text, key) {
   if (key === "lineup" && /Suplentes/i.test(text)) score += 300;
   if (key === "timeline" && /Escanteio|Goal|Gol/i.test(text)) score += 200;
   return score;
+}
+
+const MIN_EXTRACT_PLAYER_INTERVAL_MS = 30_000;
+const EXTRACT_PLAYER_STORAGE_KEY = "bet365-extract-player-state";
+const EXTRACT_PLAYER_BALL_SIZE_PX = 72;
+
+function parseIntervalInput(raw, minMs = MIN_EXTRACT_PLAYER_INTERVAL_MS) {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (!s) return null;
+
+  let ms = null;
+  const mmss = s.match(/^(\d{1,3}):(\d{2})$/);
+  if (mmss) {
+    ms = (parseInt(mmss[1], 10) * 60 + parseInt(mmss[2], 10)) * 1000;
+  } else if (/^\d+\s*m$/.test(s)) {
+    ms = parseInt(s, 10) * 60_000;
+  } else if (/^\d+\s*s$/.test(s)) {
+    ms = parseInt(s, 10) * 1000;
+  } else if (/^\d+$/.test(s)) {
+    ms = parseInt(s, 10) * 1000;
+  }
+
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(ms, minMs);
+}
+
+function formatPlayerCountdown(remainingMs) {
+  const totalSec = Math.max(0, Math.ceil(Number(remainingMs || 0) / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function clampBallPosition(pos, viewport, ballSize = EXTRACT_PLAYER_BALL_SIZE_PX) {
+  const width = Math.max(ballSize, Number(viewport?.width || 0));
+  const height = Math.max(ballSize, Number(viewport?.height || 0));
+  return {
+    x: Math.min(Math.max(0, Number(pos?.x || 0)), width - ballSize),
+    y: Math.min(Math.max(0, Number(pos?.y || 0)), height - ballSize),
+  };
+}
+
+function defaultBallPosition(viewport, ballSize = EXTRACT_PLAYER_BALL_SIZE_PX) {
+  const width = Number(viewport?.width || 1200);
+  const height = Number(viewport?.height || 900);
+  return clampBallPosition(
+    {
+      x: (width - ballSize) / 2,
+      y: Math.min(height - ballSize - 24, Math.round(height * 0.78)),
+    },
+    { width, height },
+    ballSize
+  );
+}
+
+function summarizeExtractPreview(data = {}) {
+  const m = data.match || {};
+  const home = m.homeTeam || "?";
+  const away = m.awayTeam || "?";
+  const score = m.score || "—";
+  const clock = m.clock || "—";
+  const stats = (data.stats || []).length;
+  const odds = (data.odds || []).length;
+  const events = (data.sidePanel?.timeline || []).length;
+  return `${home} vs ${away} · ${score} @ ${clock} · ${stats} stats · ${odds} odds · ${events} evt`;
+}
+
+function createExtractPlayerScheduler(options = {}) {
+  const minIntervalMs = options.minIntervalMs ?? MIN_EXTRACT_PLAYER_INTERVAL_MS;
+  let intervalMs = minIntervalMs;
+  let running = false;
+  let extracting = false;
+  let nextRunAt = null;
+  let lastRunAt = null;
+
+  const countdownMs = (now) => {
+    if (!running || extracting || nextRunAt == null) return null;
+    return Math.max(0, nextRunAt - now);
+  };
+
+  return {
+    getState() {
+      return { intervalMs, running, extracting, nextRunAt, lastRunAt };
+    },
+    setIntervalInput(input) {
+      const parsed = parseIntervalInput(input, minIntervalMs);
+      if (parsed) intervalMs = parsed;
+      return intervalMs;
+    },
+    getIntervalMs() {
+      return intervalMs;
+    },
+    start(now) {
+      running = true;
+      extracting = false;
+      nextRunAt = now;
+      return this.getState();
+    },
+    stop() {
+      running = false;
+      extracting = false;
+      nextRunAt = null;
+      return this.getState();
+    },
+    markExtractStart(now) {
+      extracting = true;
+      lastRunAt = now;
+      return this.getState();
+    },
+    markExtractEnd(now) {
+      extracting = false;
+      if (running) nextRunAt = now + intervalMs;
+      return this.getState();
+    },
+    tick(now) {
+      if (!running) return { action: "none", countdownMs: null };
+      if (extracting) return { action: "none", countdownMs: countdownMs(now) };
+      if (nextRunAt != null && now >= nextRunAt) {
+        return { action: "extract", countdownMs: 0 };
+      }
+      return { action: "wait", countdownMs: countdownMs(now) };
+    },
+  };
+}
+
+function serializePlayerState(state = {}) {
+  return JSON.stringify({
+    x: state.x,
+    y: state.y,
+    intervalInput: state.intervalInput ?? "60",
+    running: Boolean(state.running),
+  });
+}
+
+function parsePlayerState(raw) {
+  try {
+    const parsed = JSON.parse(String(raw || ""));
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      x: Number.isFinite(parsed.x) ? parsed.x : null,
+      y: Number.isFinite(parsed.y) ? parsed.y : null,
+      intervalInput: String(parsed.intervalInput || "60"),
+      running: Boolean(parsed.running),
+    };
+  } catch (_) {
+    return null;
+  }
 }
 
   const networkLog = [];
@@ -6598,4 +6743,382 @@ function collectFrameWalkTexts() {
 
     return true;
   });
+
+  function mountExtractPlayer(options = {}) {
+  if (window !== window.top) return null;
+  if (!isBet365MatchUrl(location.href)) return null;
+  if (document.getElementById("bet365-extract-player-root")) return null;
+
+  const buildDataFn = options.buildData || buildData;
+  const version = options.version || VERSION;
+  const ballSize = EXTRACT_PLAYER_BALL_SIZE_PX;
+  const scheduler = createExtractPlayerScheduler();
+  let lastData = null;
+  let tabId = options.tabId ?? null;
+  let drag = null;
+  let tickTimer = null;
+
+  const root = document.createElement("div");
+  root.id = "bet365-extract-player-root";
+  root.innerHTML = `
+<style>
+#bet365-extract-player-root {
+  position: fixed;
+  z-index: 2147483646;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  user-select: none;
+  touch-action: none;
+}
+#bet365-extract-player-root .bet365-player-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,.35));
+}
+#bet365-extract-player-root .bet365-player-ball {
+  width: ${ballSize}px;
+  height: ${ballSize}px;
+  border-radius: 50%;
+  cursor: grab;
+  background:
+    radial-gradient(circle at 30% 30%, #fff 0 14%, transparent 15%),
+    radial-gradient(circle at 68% 38%, #fff 0 10%, transparent 11%),
+    radial-gradient(circle at 42% 72%, #fff 0 12%, transparent 13%),
+    radial-gradient(circle at 70% 68%, #fff 0 9%, transparent 10%),
+    conic-gradient(from 200deg, #0a5f38 0 72deg, #f5f5f5 72deg 144deg, #0a5f38 144deg 216deg, #f5f5f5 216deg 288deg, #0a5f38 288deg 360deg);
+  border: 3px solid #063d24;
+  box-shadow: inset 0 -4px 10px rgba(0,0,0,.25);
+  display: grid;
+  place-items: center;
+  color: #063d24;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.1;
+  padding: 6px;
+}
+#bet365-extract-player-root .bet365-player-ball:active { cursor: grabbing; }
+#bet365-extract-player-root .bet365-player-ball.is-running {
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, .55), inset 0 -4px 10px rgba(0,0,0,.25);
+}
+#bet365-extract-player-root .bet365-player-panel {
+  width: 240px;
+  background: rgba(8, 20, 14, .94);
+  color: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, .35);
+  border-radius: 12px;
+  padding: 10px;
+  backdrop-filter: blur(6px);
+}
+#bet365-extract-player-root label {
+  display: block;
+  font-size: 11px;
+  opacity: .85;
+  margin-bottom: 4px;
+}
+#bet365-extract-player-root input {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.15);
+  background: rgba(255,255,255,.08);
+  color: #fff;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+#bet365-extract-player-root .bet365-player-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+#bet365-extract-player-root button {
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#bet365-extract-player-root .bet365-btn-play {
+  background: #10b981;
+  color: #042f1a;
+}
+#bet365-extract-player-root .bet365-btn-stop {
+  background: #f59e0b;
+  color: #3b2500;
+}
+#bet365-extract-player-root .bet365-btn-zip {
+  background: rgba(255,255,255,.12);
+  color: #ecfdf5;
+}
+#bet365-extract-player-root .bet365-player-countdown {
+  flex: 1;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+#bet365-extract-player-root .bet365-player-preview {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: .92;
+  word-break: break-word;
+}
+#bet365-extract-player-root .bet365-player-status {
+  margin-top: 6px;
+  font-size: 10px;
+  opacity: .75;
+}
+</style>
+<div class="bet365-player-wrap">
+  <div class="bet365-player-ball" data-role="ball" title="Arraste a bola · Player v${version}">B365</div>
+  <div class="bet365-player-panel">
+    <label for="bet365-player-interval">Intervalo (ex: 60, 1:30, 2m)</label>
+    <input id="bet365-player-interval" data-role="interval" value="60" />
+    <div class="bet365-player-row">
+      <button type="button" data-role="toggle" class="bet365-btn-play">▶ Iniciar</button>
+      <div class="bet365-player-countdown" data-role="countdown">Próxima: —</div>
+    </div>
+    <div class="bet365-player-row">
+      <button type="button" data-role="zip" class="bet365-btn-zip">ZIP</button>
+      <div class="bet365-player-status" data-role="status">Pausado</div>
+    </div>
+    <div class="bet365-player-preview" data-role="preview">Aguardando 1ª extração…</div>
+  </div>
+</div>`;
+
+  const ball = root.querySelector('[data-role="ball"]');
+  const intervalInput = root.querySelector('[data-role="interval"]');
+  const toggleBtn = root.querySelector('[data-role="toggle"]');
+  const countdownEl = root.querySelector('[data-role="countdown"]');
+  const previewEl = root.querySelector('[data-role="preview"]');
+  const statusEl = root.querySelector('[data-role="status"]');
+  const zipBtn = root.querySelector('[data-role="zip"]');
+
+  function saveState() {
+    const rect = root.getBoundingClientRect();
+    try {
+      localStorage.setItem(
+        EXTRACT_PLAYER_STORAGE_KEY,
+        serializePlayerState({
+          x: rect.left,
+          y: rect.top,
+          intervalInput: intervalInput.value,
+          running: scheduler.getState().running,
+        })
+      );
+    } catch (_) {}
+  }
+
+  function applyPosition(pos) {
+    const clamped = clampBallPosition(
+      pos,
+      {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+      ballSize
+    );
+    root.style.left = `${clamped.x}px`;
+    root.style.top = `${clamped.y}px`;
+  }
+
+  function restoreState() {
+    let pos = defaultBallPosition(
+      {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+      ballSize
+    );
+    try {
+      const saved = parsePlayerState(localStorage.getItem(EXTRACT_PLAYER_STORAGE_KEY));
+      if (saved?.intervalInput) intervalInput.value = saved.intervalInput;
+      if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) {
+        pos = clampBallPosition(
+          { x: saved.x, y: saved.y },
+          {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          },
+          ballSize
+        );
+      }
+      if (saved?.running) {
+        scheduler.setIntervalInput(intervalInput.value);
+        scheduler.start(Date.now());
+        syncToggleUi();
+      }
+    } catch (_) {}
+    scheduler.setIntervalInput(intervalInput.value);
+    applyPosition(pos);
+  }
+
+  function syncToggleUi() {
+    const { running, extracting } = scheduler.getState();
+    ball.classList.toggle("is-running", running);
+    toggleBtn.textContent = running ? "⏸ Pausar" : "▶ Iniciar";
+    toggleBtn.className = running ? "bet365-btn-stop" : "bet365-btn-play";
+    statusEl.textContent = extracting ? "Extraindo…" : running ? "Ativo" : "Pausado";
+  }
+
+  function updateCountdown(now = Date.now()) {
+    const tick = scheduler.tick(now);
+    if (!scheduler.getState().running) {
+      countdownEl.textContent = "Próxima: —";
+      return tick;
+    }
+    if (tick.action === "extract") {
+      countdownEl.textContent = "Próxima: agora";
+    } else if (tick.countdownMs != null) {
+      countdownEl.textContent = `Próxima: ${formatPlayerCountdown(tick.countdownMs)}`;
+    } else {
+      countdownEl.textContent = "Próxima: —";
+    }
+    return tick;
+  }
+
+  async function resolveTabId() {
+    if (tabId) return tabId;
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "GET_TAB_ID" });
+      tabId = res?.tabId ?? tabId;
+    } catch (_) {}
+    return tabId;
+  }
+
+  async function downloadZip(data) {
+    if (typeof JSZip === "undefined" || typeof buildZipEntries !== "function") {
+      statusEl.textContent = "ZIP indisponível";
+      return;
+    }
+    const zip = new JSZip();
+    buildZipEntries(data).forEach(({ path, content }) => zip.file(path, content));
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+    const reader = new FileReader();
+    const zipBase64 = await new Promise((resolve, reject) => {
+      reader.onload = () => resolve(String(reader.result || "").split(",")[1]);
+      reader.onerror = () => reject(reader.error || new Error("zip read failed"));
+      reader.readAsDataURL(blob);
+    });
+    const filename =
+      typeof buildZipFilename === "function"
+        ? buildZipFilename(data)
+        : `bet365-extract-${Date.now()}.zip`;
+    await chrome.runtime.sendMessage({ type: "DOWNLOAD_ZIP", zipBase64, filename });
+  }
+
+  async function runExtract() {
+    if (scheduler.getState().extracting) return;
+    scheduler.markExtractStart(Date.now());
+    syncToggleUi();
+    statusEl.textContent = "Extraindo…";
+    try {
+      const id = await resolveTabId();
+      const data = await buildDataFn(id);
+      lastData = data;
+      previewEl.textContent = summarizeExtractPreview(data);
+      statusEl.textContent = "OK";
+    } catch (err) {
+      statusEl.textContent = String(err?.message || err).slice(0, 80);
+    } finally {
+      scheduler.markExtractEnd(Date.now());
+      syncToggleUi();
+      saveState();
+    }
+  }
+
+  async function onTick() {
+    const tick = updateCountdown();
+    if (tick.action === "extract") await runExtract();
+  }
+
+  ball.addEventListener("pointerdown", (ev) => {
+    drag = {
+      pointerId: ev.pointerId,
+      offsetX: ev.clientX - root.offsetLeft,
+      offsetY: ev.clientY - root.offsetTop,
+    };
+    ball.setPointerCapture(ev.pointerId);
+  });
+
+  ball.addEventListener("pointermove", (ev) => {
+    if (!drag || drag.pointerId !== ev.pointerId) return;
+    applyPosition({
+      x: ev.clientX - drag.offsetX,
+      y: ev.clientY - drag.offsetY,
+    });
+  });
+
+  const endDrag = (ev) => {
+    if (!drag || drag.pointerId !== ev.pointerId) return;
+    drag = null;
+    saveState();
+  };
+  ball.addEventListener("pointerup", endDrag);
+  ball.addEventListener("pointercancel", endDrag);
+
+  toggleBtn.addEventListener("click", () => {
+    scheduler.setIntervalInput(intervalInput.value);
+    if (scheduler.getState().running) {
+      scheduler.stop();
+    } else {
+      scheduler.start(Date.now());
+    }
+    syncToggleUi();
+    saveState();
+    onTick();
+  });
+
+  intervalInput.addEventListener("change", () => {
+    scheduler.setIntervalInput(intervalInput.value);
+    saveState();
+  });
+
+  zipBtn.addEventListener("click", async () => {
+    if (!lastData) {
+      statusEl.textContent = "Sem dados";
+      return;
+    }
+    try {
+      statusEl.textContent = "ZIP…";
+      await downloadZip(lastData);
+      statusEl.textContent = "ZIP ok";
+    } catch (err) {
+      statusEl.textContent = String(err?.message || err).slice(0, 80);
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    const rect = root.getBoundingClientRect();
+    applyPosition({ x: rect.left, y: rect.top });
+  });
+
+  document.documentElement.appendChild(root);
+  restoreState();
+  syncToggleUi();
+  tickTimer = window.setInterval(onTick, 1000);
+  onTick();
+
+  return {
+    root,
+    scheduler,
+    destroy() {
+      if (tickTimer) window.clearInterval(tickTimer);
+      root.remove();
+    },
+  };
+}
+
+
+  function bootExtractPlayer() {
+    if (window !== window.top) return;
+    mountExtractPlayer({ buildData, version: VERSION });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootExtractPlayer, { once: true });
+  } else {
+    bootExtractPlayer();
+  }
 })();

@@ -118,6 +118,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "GET_TAB_ID") {
+    sendResponse({ tabId: sender.tab?.id ?? null });
+    return false;
+  }
+
   if (message?.type === "EXTRACT_TAB") {
     const tabId = message.tabId ?? sender.tab?.id;
     if (!tabId) {
