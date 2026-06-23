@@ -10,6 +10,7 @@ import {
   buildTimelineFromPanelTexts,
   reconcileTimelineCorners,
   reconcileTimelineGoals,
+  isRealTimelineGoal,
   parseGoalScorersFromText,
   parseGoalsFromScoreboardText,
   parseGoalsFromOdds,
@@ -205,6 +206,24 @@ describe("reconcileTimelineGoals", () => {
     assert.equal(goal.source, "scoreboard-inferred");
   });
 
+  it("remove gol falso de mercado e recupera M Pedersen 43'", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-market-leak-47.txt"));
+    const fake = events.find((e) => e.type === "goal");
+    assert.equal(fake, undefined);
+
+    const out = reconcileTimelineGoals(events, {
+      match: { score: "1-0", scoreHome: 1, scoreAway: 0 },
+      scoreboardText: readFixture("side-panel-scoreboard-norway-intervalo.txt"),
+      odds: [{ market: "1° Gol", selection: "M Pedersen", odds: 43 }],
+    });
+    const goal = out.find((e) => e.type === "goal");
+
+    assert.ok(goal);
+    assert.equal(goal.minute, 43);
+    assert.match(goal.description, /M Pedersen/);
+    assert.equal(goal.source, "scoreboard-inferred");
+  });
+
   it("rejeita nomes colados da escalação no parser de placar", () => {
     const goals = parseGoalsFromScoreboardText(
       "2' O Nyland E Mendy D Wolfe E Diouf 43' M Pedersen 43'"
@@ -348,6 +367,18 @@ describe("parseTimelineFromText", () => {
     assert.ok(!events.some((e) => /2.?\s*Gol\s*-\s*Método/i.test(e.description)));
     assert.equal(events.find((e) => e.type === "goal")?.minute, 15);
     assert.equal(events.filter((e) => e.type === "corner").length, 2);
+  });
+
+  it("ignora mercados instantâneos do próximo minuto na cronologia", () => {
+    const events = parseTimelineFromText(readFixture("side-panel-timeline-market-leak-47.txt"));
+
+    assert.ok(!events.some((e) => /Para Qualquer um Receber/i.test(e.description)));
+    assert.ok(!events.some((e) => /Escanteios Asiáticos/i.test(e.description)));
+    assert.ok(!events.some((e) => /Partida - Chutes/i.test(e.description)));
+    assert.equal(
+      events.filter((e) => e.type === "corner" && /Escanteio/.test(e.description)).length,
+      5
+    );
   });
 
   it("ignora Primeiro a Marcar e Sem N° gol vazando na cronologia", () => {

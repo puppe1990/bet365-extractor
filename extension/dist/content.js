@@ -517,7 +517,7 @@ function bet365UrlHint(url) {
   return "Abra a página do jogo (clique no confronto até a URL ter #/IP/EV... ou .../E123...)";
 }
 
-const VERSION = "3.10.19";
+const VERSION = "3.10.20";
 
 const JUNK_ODDS_SELECTIONS =
   /^(Mais de|Menos de|Exatamente|Nenhum|Tabela|gol$|CA$|A Qualquer Momento|Cronologia|Escalação|Estat\.?|Estatísticas de Jogador)$/i;
@@ -3081,7 +3081,7 @@ function reconcileTimelineGoals(events, options = {}) {
       : null);
   if (!expected || expected < 1) return events;
 
-  let out = [...events];
+  let out = events.filter((e) => e.type !== "goal" || isRealTimelineGoal(e));
   const goalEvents = out.filter((e) => e.type === "goal");
   if (goalEvents.length >= expected) return out;
 
@@ -3256,10 +3256,29 @@ function isTimelineMarketLeakLine(line) {
   if (/Hora do \d/i.test(s)) return true;
   if (/Gol antes do minuto/i.test(s)) return true;
   if (/Sem Gol antes do minuto/i.test(s)) return true;
+  if (/Para Qualquer um Receber/i.test(s)) return true;
+  if (/Último Marcador de Gol/i.test(s)) return true;
+  if (/Substituto Sim\/Não/i.test(s)) return true;
+  if (/^Escanteios Asiáticos$/i.test(s)) return true;
+  if (/^Partida\s*-\s*(Chutes|Impedimentos)/i.test(s)) return true;
+  if (/^Impedimentos Atuais/i.test(s)) return true;
+  if (/^Impedimentos do Time$/i.test(s)) return true;
+  if (/^Time\s*-\s*Chutes$/i.test(s)) return true;
   const pipes = (s.match(/\|/g) || []).length;
   if (pipes >= 3 && /Gol|Escanteio|Cart[aã]o|P[eê]nalti|M[eé]todo|Gol Contra/i.test(s)) {
     return true;
   }
+  return false;
+}
+
+function isRealTimelineGoal(event) {
+  if (event?.type !== "goal") return false;
+  const desc = String(event.description || "");
+  const details = event.details || [];
+  if (isTimelineMarketLeakLine(desc) || details.some((d) => isTimelineMarketLeakLine(d))) return false;
+  if (/\d+[º°]\s*Goal/i.test(desc)) return true;
+  if (/ - (Chute|Assist)/i.test(desc)) return true;
+  if (/inferred/.test(event.source || "")) return true;
   return false;
 }
 
@@ -3485,7 +3504,11 @@ function mergeTimelineEvents(...lists) {
 
 function inferTimelineType(details) {
   const t = details.join(" ");
-  if (/Gol|Goal/i.test(t)) return "goal";
+  if (details.some((d) => isTimelineMarketLeakLine(d)) || isTimelineMarketLeakLine(t)) {
+    return "event";
+  }
+  if (/\d+[º°]\s*(?:Goal|Gol)\b/i.test(t)) return "goal";
+  if (/ - Chute/i.test(t) && /\b(?:Goal|Gol)\b/i.test(t)) return "goal";
   if (/Escanteio/i.test(t)) return "corner";
   if (/Pênalti|Penalti/i.test(t)) return "penalty";
   if (/Impedimento/i.test(t)) return "offside";
